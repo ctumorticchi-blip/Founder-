@@ -11,6 +11,8 @@ import { applyMonthlyCashFlow, computeMonthlyInterest, injectCapital, type Finan
 import { computeServiceMonth } from "../economic-models/service.js";
 import { computeHospitalityMonth } from "../economic-models/hospitality.js";
 import { computeSubscriptionMonth } from "../economic-models/subscription.js";
+import { RetailEngine } from "../economic-models/retail.js";
+import { AgencyEngine } from "../economic-models/agency.js";
 import { createBusiness } from "../business/treasury.js";
 import { createWorkforce } from "../employees/employees.js";
 import type { MonthlyFinancialStatement } from "../../types/business.js";
@@ -43,6 +45,17 @@ export function createOwnedBusiness(id: string, spec: CreateBusinessSpec): Owned
         cogsRatio: spec.cogsRatio,
       };
       break;
+    case "retail":
+      familyState = { family: "retail", reputationScore: INITIAL_REPUTATION_SCORE, unitCostOfGoods: spec.unitCostOfGoods };
+      break;
+    case "agency":
+      familyState = {
+        family: "agency",
+        reputationScore: INITIAL_REPUTATION_SCORE,
+        averageMonthlyFeePerMandate: spec.averageMonthlyFeePerMandate,
+        deliveryCostRatio: spec.deliveryCostRatio,
+      };
+      break;
   }
 
   return { id, business, workforce, marketId: spec.marketId, familyState };
@@ -58,6 +71,10 @@ const LABOR_HOURS_PER_COVER = 0.5;
 const SUBSCRIBERS_PER_SUPPORT_HEADCOUNT = 500;
 /** Majoration maximale du churn en cas de sous-effectif support total (staffingRatio -> 0). */
 const MAX_UNDERSTAFFING_CHURN_PENALTY = 1.0;
+/** Heures de main-d'œuvre nécessaires pour traiter la vente d'une unité (Retail, ex. caisse/conseil). */
+const LABOR_HOURS_PER_UNIT_SOLD = 0.25;
+/** Heures de main-d'œuvre nécessaires pour livrer un mandat par mois (Agency). */
+const LABOR_HOURS_PER_MANDATE = 15;
 
 export interface ResolvedBusinessMonth {
   readonly updated: OwnedBusiness;
@@ -156,6 +173,44 @@ export function resolveBusinessMonth(
       revenue = contribution.revenue;
       variableCosts = contribution.variableCosts;
       familyState = { ...state, activeSubscribers: contribution.endingSubscribers };
+      break;
+    }
+    case "retail": {
+      const state = requireFamilyState(owned.familyState, "retail");
+      const capacityHours =
+        action.founderHoursAllocated + computeWorkforceCapacityHours(headcountResult.workforce, founderLeadershipSkill);
+      const laborCapacityUnits = capacityHours / LABOR_HOURS_PER_UNIT_SOLD;
+      const contribution = RetailEngine.computeMonth(
+        { unitPrice: action.decisions.unitPrice, unitCostOfGoods: state.unitCostOfGoods, reputationScore: state.reputationScore },
+        {
+          stockUnits: Math.min(action.decisions.stockUnits, laborCapacityUnits),
+          expectedFootTraffic: action.decisions.expectedFootTraffic * demandShare,
+        },
+        { rng: rng.fork(`business:${owned.id}:retail`) },
+      );
+      revenue = contribution.revenue;
+      variableCosts = contribution.variableCosts;
+      familyState = { ...state, reputationScore: clamp(state.reputationScore + contribution.unitsSold * 0.0003, 0, 1) };
+      break;
+    }
+    case "agency": {
+      const state = requireFamilyState(owned.familyState, "agency");
+      const capacityHours =
+        action.founderHoursAllocated + computeWorkforceCapacityHours(headcountResult.workforce, founderLeadershipSkill);
+      const capacityMandates = capacityHours / LABOR_HOURS_PER_MANDATE;
+      const contribution = AgencyEngine.computeMonth(
+        {
+          averageMonthlyFeePerMandate: state.averageMonthlyFeePerMandate,
+          deliveryCostRatio: state.deliveryCostRatio,
+          reputationScore: state.reputationScore,
+          skillFactor: clamp(founderLeadershipSkill / 100, 0, 1),
+        },
+        { capacityMandates, targetMandates: action.decisions.targetMandates * demandShare },
+        { rng: rng.fork(`business:${owned.id}:agency`) },
+      );
+      revenue = contribution.revenue;
+      variableCosts = contribution.variableCosts;
+      familyState = { ...state, reputationScore: clamp(state.reputationScore + contribution.wonMandates * 0.001, 0, 1) };
       break;
     }
   }

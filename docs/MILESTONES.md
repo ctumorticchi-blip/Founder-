@@ -2,12 +2,34 @@
 
 Chaque milestone est commit(é)+push(é) séparément une fois ses tests verts.
 
-Statut : M0 à M9 complétés (voir l'historique git de la branche pour les
-SHA de chaque milestone). Le P0 est fonctionnellement complet côté moteur,
-et une passe de consolidation (M6-M9) a corrigé deux lacunes identifiées
-après revue : le système d'employés (jusque-là no-op) et un modèle de
-faillite jugé trop naïf ("6 mois de cash négatif" sans mécanisme de
-financement explicite).
+Statut : M0 à M9.5 complétés (voir l'historique git de la branche pour les
+SHA de chaque milestone). Le moteur P0 est considéré comme clos : les 5/5
+familles économiques sont réellement jouables via `simulateMonth`, la
+trésorerie ne laisse plus aucun coût disparaître (obligations impayées
+persistantes, remboursées en priorité, avec pénalité progressive et
+insolvabilité après signal). Aucune nouvelle mécanique économique ne doit
+être ajoutée sans revalidation explicite — la suite (M10) est l'interface
+web.
+
+### M9.5 — Fermeture finale du moteur
+- Câblage de Retail et Agency/B2B dans `businessResolution.ts`, avec
+  exactement les mêmes principes que Service/Hospitality/Subscription
+  (effectif -> capacité -> moteur pur -> comptabilité -> trésorerie).
+  `RetailMarket`/`AgencyMarket` ajoutés à `src/scenarios/markets.ts`.
+- `engine/business/treasury.ts` : `TreasuryState.unpaidObligations`
+  remplace le compteur `consecutiveUnmetShortfallMonths` par un vrai solde
+  dû mais non réglé — persistant, remboursé en priorité (avant la ligne de
+  crédit) dès que du cash redevient disponible, portant une pénalité de
+  retard mensuelle tant qu'il reste dû (conséquence progressive), et menant
+  à l'insolvabilité après `INSOLVENCY_THRESHOLD_MONTHS` mois consécutifs
+  d'impayé. Un test d'identité de conservation (`netPosition = cash -
+  créditTiré - impayés`) démontre qu'aucun euro n'apparaît ou ne disparaît
+  hors des flux économiques réels (cash-flow du mois et pénalité de retard).
+- **Tests** : Retail et Agency via `simulateMonth` (création, effet de
+  capacité par recrutement, déterminisme sur 60 mois) ; les 5/5 familles
+  simultanément dans un même portefeuille ; accumulation/remboursement
+  (partiel et total) des obligations impayées ; conservation exacte de la
+  valeur ; insolvabilité cohérente avec signal préalable.
 
 ## M0 — Scaffolding + documentation (ce commit)
 - `docs/SPEC_P0.md`, `docs/ARCHITECTURE.md`, `docs/MILESTONES.md`.
@@ -119,6 +141,6 @@ Demandée après revue du P0 : le no-op "employés" et la liquidation naïve
   tout `src/`.
 
 ## Hors périmètre de ces milestones
-Voir `docs/SPEC_P0.md` §2 (IPO, M&A majeur, dynastie, etc.). Retail et
-Agency ne sont pas câblés dans l'orchestrateur (restent des `EconomicEngine`
-purs testés isolément).
+Voir `docs/SPEC_P0.md` §2 (IPO, M&A majeur, dynastie, etc.). Depuis M9.5,
+les 5/5 familles économiques sont câblées dans l'orchestrateur — cette
+limite n'existe plus.

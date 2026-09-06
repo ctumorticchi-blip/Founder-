@@ -7,11 +7,19 @@ import type {
 } from "../../types/business.js";
 
 /**
- * Mois consécutifs de besoin de financement non couvert (cash épuisé ET
- * ligne de crédit au plafond) avant liquidation forcée pour insolvabilité.
- * Le compteur est le signal précurseur exigé par la spec §3.7.
+ * Mois consécutifs avec des obligations impayées (`unpaidObligations > 0`
+ * en fin de mois) avant liquidation forcée pour insolvabilité. Le compteur
+ * est le signal précurseur exigé par la spec §3.7.
  */
 export const INSOLVENCY_THRESHOLD_MONTHS = 6;
+
+/**
+ * Pénalité de retard mensuelle appliquée au solde d'obligations impayées
+ * tant qu'il n'est pas soldé (conséquence progressive, spec de clôture
+ * M9.5 : "produire des conséquences progressives"). Volontairement simple
+ * (un seul taux constant) — pas de moteur juridique de recouvrement.
+ */
+export const UNPAID_OBLIGATIONS_PENALTY_RATE_MONTHLY = 0.02;
 
 export interface CreateBusinessFinancing {
   readonly creditLineLimit: number;
@@ -44,7 +52,8 @@ export function createBusiness(
         drawn: 0,
         interestRateAnnual: financing.creditLineInterestRateAnnual,
       },
-      consecutiveUnmetShortfallMonths: 0,
+      unpaidObligations: 0,
+      consecutiveUnpaidMonths: 0,
       isInsolvent: false,
     },
   };
@@ -57,6 +66,7 @@ export function computeMonthlyInterest(creditLine: CreditLineState): number {
 
 export type FinancingOutcomeKind =
   | "covered-by-cash"
+  | "obligations-repaid"
   | "credit-repaid"
   | "covered-by-credit-draw"
   | "shortfall-unmet"
@@ -64,7 +74,7 @@ export type FinancingOutcomeKind =
 
 export interface FinancingOutcome {
   readonly kind: FinancingOutcomeKind;
-  /** Montant pertinent selon `kind` (remboursement, tirage, ou découvert non couvert). */
+  /** Montant pertinent selon `kind` (remboursement, tirage, ou impayé nouveau/persistant). */
   readonly amount: number;
 }
 
@@ -73,88 +83,103 @@ export interface ApplyCashFlowResult {
   readonly outcome: FinancingOutcome;
 }
 
+function finalizeInsolvencyState(
+  unpaidObligations: number,
+  previousConsecutiveUnpaidMonths: number,
+): { readonly consecutiveUnpaidMonths: number; readonly isInsolvent: boolean } {
+  const consecutiveUnpaidMonths = unpaidObligations > 0 ? previousConsecutiveUnpaidMonths + 1 : 0;
+  return { consecutiveUnpaidMonths, isInsolvent: consecutiveUnpaidMonths >= INSOLVENCY_THRESHOLD_MONTHS };
+}
+
 /**
  * Applique le cash-flow du mois à la trésorerie, en suivant une cascade de
- * financement explicite (spec) :
+ * financement explicite qui ne laisse jamais un coût engagé disparaître
+ * (spec de clôture M9.5) :
  *
+ * 0. Les obligations impayées héritées des mois précédents portent d'abord
+ *    une pénalité de retard (conséquence progressive).
  * 1. Cash disponible = cash + cashFlow du mois.
- * 2. Si positif ou nul : on rembourse en priorité l'encours de crédit tiré,
- *    puis le solde reste en cash. Jamais de cash négatif.
+ * 2. Si positif ou nul : on éponge en priorité les obligations impayées
+ *    (+ pénalité), puis on rembourse l'encours de crédit tiré, puis le
+ *    solde reste en cash. Jamais de cash négatif.
  * 3. Si négatif (besoin de financement) : on tire sur la ligne de crédit
- *    dans la limite de son plafond.
- *    - Si le tirage couvre tout le besoin : cash = 0, pas de signal.
- *    - Sinon (ligne de crédit épuisée ET besoin non couvert) : le compteur
- *      de mois consécutifs de découvert non couvert s'incrémente ; au-delà
- *      du seuil, l'entreprise devient insolvable (liquidation forcée par
- *      l'appelant).
+ *    dans la limite de son plafond. Ce qui n'est ni couvert par le cash ni
+ *    par la ligne de crédit s'ajoute aux obligations impayées existantes
+ *    (+ pénalité) — ce n'est jamais simplement annulé.
  *
  * Le cash ne peut donc jamais devenir négatif : un besoin de financement
- * non couvert se lit sur `consecutiveUnmetShortfallMonths`/`isInsolvent`,
- * jamais sur un solde de cash fictif.
+ * non couvert se lit sur `unpaidObligations`/`consecutiveUnpaidMonths`/
+ * `isInsolvent`, jamais sur un solde de cash fictif ni sur un montant qui
+ * se serait volatilisé sans contrepartie économique.
  */
 export function applyMonthlyCashFlow(
   business: BusinessState,
   statement: MonthlyFinancialStatement,
 ): ApplyCashFlowResult {
   const treasury = business.treasury;
+  const accruedUnpaidObligations = treasury.unpaidObligations * (1 + UNPAID_OBLIGATIONS_PENALTY_RATE_MONTHLY);
   const availableCash = treasury.cash + statement.cashFlow;
 
   if (availableCash >= 0) {
-    const repayment = Math.min(treasury.creditLine.drawn, availableCash);
-    const nextTreasury: TreasuryState = {
-      cash: availableCash - repayment,
-      creditLine: { ...treasury.creditLine, drawn: treasury.creditLine.drawn - repayment },
-      consecutiveUnmetShortfallMonths: 0,
-      isInsolvent: false,
-    };
-    return {
-      business: { ...business, treasury: nextTreasury },
-      outcome:
-        repayment > 0
-          ? { kind: "credit-repaid", amount: repayment }
-          : { kind: "covered-by-cash", amount: availableCash },
-    };
+    const obligationsRepayment = Math.min(accruedUnpaidObligations, availableCash);
+    const unpaidObligations = accruedUnpaidObligations - obligationsRepayment;
+    const cashAfterObligations = availableCash - obligationsRepayment;
+
+    const creditRepayment = Math.min(treasury.creditLine.drawn, cashAfterObligations);
+    const cash = cashAfterObligations - creditRepayment;
+    const creditLine: CreditLineState = { ...treasury.creditLine, drawn: treasury.creditLine.drawn - creditRepayment };
+
+    const { consecutiveUnpaidMonths, isInsolvent } = finalizeInsolvencyState(
+      unpaidObligations,
+      treasury.consecutiveUnpaidMonths,
+    );
+    const nextTreasury: TreasuryState = { cash, creditLine, unpaidObligations, consecutiveUnpaidMonths, isInsolvent };
+    const updatedBusiness = { ...business, treasury: nextTreasury };
+
+    if (isInsolvent) {
+      return { business: updatedBusiness, outcome: { kind: "insolvent", amount: unpaidObligations } };
+    }
+    if (unpaidObligations > 0) {
+      return { business: updatedBusiness, outcome: { kind: "shortfall-unmet", amount: unpaidObligations } };
+    }
+    if (obligationsRepayment > 0) {
+      return { business: updatedBusiness, outcome: { kind: "obligations-repaid", amount: obligationsRepayment } };
+    }
+    if (creditRepayment > 0) {
+      return { business: updatedBusiness, outcome: { kind: "credit-repaid", amount: creditRepayment } };
+    }
+    return { business: updatedBusiness, outcome: { kind: "covered-by-cash", amount: availableCash } };
   }
 
   const financingNeed = -availableCash;
   const roomLeft = treasury.creditLine.limit - treasury.creditLine.drawn;
   const draw = Math.max(0, Math.min(financingNeed, roomLeft));
-  const remainingShortfall = financingNeed - draw;
+  const newShortfall = financingNeed - draw;
   const creditLine: CreditLineState = { ...treasury.creditLine, drawn: treasury.creditLine.drawn + draw };
+  const unpaidObligations = accruedUnpaidObligations + newShortfall;
 
-  if (remainingShortfall <= 0) {
-    const nextTreasury: TreasuryState = {
-      cash: 0,
-      creditLine,
-      consecutiveUnmetShortfallMonths: 0,
-      isInsolvent: false,
-    };
-    return {
-      business: { ...business, treasury: nextTreasury },
-      outcome: { kind: "covered-by-credit-draw", amount: draw },
-    };
+  const { consecutiveUnpaidMonths, isInsolvent } = finalizeInsolvencyState(
+    unpaidObligations,
+    treasury.consecutiveUnpaidMonths,
+  );
+  const nextTreasury: TreasuryState = { cash: 0, creditLine, unpaidObligations, consecutiveUnpaidMonths, isInsolvent };
+  const updatedBusiness = { ...business, treasury: nextTreasury };
+
+  if (isInsolvent) {
+    return { business: updatedBusiness, outcome: { kind: "insolvent", amount: unpaidObligations } };
   }
-
-  const consecutiveUnmetShortfallMonths = treasury.consecutiveUnmetShortfallMonths + 1;
-  const isInsolvent = consecutiveUnmetShortfallMonths >= INSOLVENCY_THRESHOLD_MONTHS;
-  const nextTreasury: TreasuryState = {
-    cash: 0,
-    creditLine,
-    consecutiveUnmetShortfallMonths,
-    isInsolvent,
-  };
-  return {
-    business: { ...business, treasury: nextTreasury },
-    outcome: isInsolvent
-      ? { kind: "insolvent", amount: remainingShortfall }
-      : { kind: "shortfall-unmet", amount: remainingShortfall },
-  };
+  if (unpaidObligations > 0) {
+    return { business: updatedBusiness, outcome: { kind: "shortfall-unmet", amount: unpaidObligations } };
+  }
+  return { business: updatedBusiness, outcome: { kind: "covered-by-credit-draw", amount: draw } };
 }
 
 /**
  * Apport de capital externe (personnel ou tiers) directement en trésorerie
  * — le levier "entreprise sauvée par apport" de la spec. N'affecte jamais la
- * ligne de crédit : c'est un financement en fonds propres, pas de la dette.
+ * ligne de crédit ni les obligations impayées directement : c'est un
+ * financement en fonds propres qui augmente le cash disponible, lequel
+ * pourra ensuite éponger des impayés au prochain `applyMonthlyCashFlow`.
  */
 export function injectCapital(business: BusinessState, amount: number): BusinessState {
   if (amount < 0) {

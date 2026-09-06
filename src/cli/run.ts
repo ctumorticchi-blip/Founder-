@@ -115,11 +115,13 @@ function printYearLine(definition: ScenarioDefinition, state: GameState, yearEve
     const statement = business.lastStatement;
     const revenue = statement ? formatMoney(statement.revenue) : "n/d";
     const netIncome = statement ? formatMoney(statement.netIncome) : "n/d";
+    const unpaid = business.business.treasury.unpaidObligations;
     return (
       `${business.id} [${business.familyState.family}]: ` +
       `cash=${formatMoney(business.business.treasury.cash)} ` +
-      `(dont crédit tiré ${formatMoney(business.business.treasury.creditLine.drawn)}), ` +
-      `salariés=${business.workforce.headcount.toFixed(1)}, ` +
+      `(dont crédit tiré ${formatMoney(business.business.treasury.creditLine.drawn)}` +
+      (unpaid > 0 ? `, impayés ${formatMoney(unpaid)}` : "") +
+      `), salariés=${business.workforce.headcount.toFixed(1)}, ` +
       `CA/mois=${revenue}, résultat/mois=${netIncome}`
     );
   });

@@ -88,19 +88,25 @@ export interface CreditLineState {
  * négative ne doit pas être possible sans mécanisme explicite permettant
  * de la financer").
  *
- * `consecutiveUnmetShortfallMonths` est le signal précurseur exigé par la
- * spec §3.7 ("pas de catastrophe instantanée sans signal") : il ne compte
- * que les mois où un besoin de financement est resté non couvert même
- * après avoir maximisé la ligne de crédit — pas un simple mois de cash-flow
- * négatif, qui peut parfaitement être absorbé par le cash ou le crédit
- * disponible sans aucune conséquence. `isInsolvent` devient vrai quand ce
- * compteur atteint le seuil de liquidation forcée
- * (voir engine/business/treasury.ts).
+ * `unpaidObligations` est le montant réellement dû mais non réglé une fois
+ * la ligne de crédit épuisée (spec de clôture M9.5 : "aucun coût engagé ne
+ * doit disparaître"). Ce n'est pas un solde qui s'évapore : il persiste
+ * d'un mois à l'autre, porte une pénalité de retard tant qu'il reste dû
+ * (conséquence progressive), et est remboursé en priorité dès que du cash
+ * redevient disponible (voir engine/business/treasury.ts).
+ *
+ * `consecutiveUnpaidMonths` est le signal précurseur exigé par la spec §3.7
+ * ("pas de catastrophe instantanée sans signal") : il compte les mois
+ * consécutifs où `unpaidObligations > 0` en fin de mois — pas un simple
+ * mois de cash-flow négatif, qui peut parfaitement être absorbé par le
+ * cash ou le crédit disponible sans laisser aucune dette. `isInsolvent`
+ * devient vrai quand ce compteur atteint le seuil de liquidation forcée.
  */
 export interface TreasuryState {
   readonly cash: number;
   readonly creditLine: CreditLineState;
-  readonly consecutiveUnmetShortfallMonths: number;
+  readonly unpaidObligations: number;
+  readonly consecutiveUnpaidMonths: number;
   readonly isInsolvent: boolean;
 }
 

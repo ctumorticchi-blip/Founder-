@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { createInitialGameState } from "../../src/engine/simulation/game.js";
 import { simulateMonth } from "../../src/engine/simulation/simulateMonth.js";
 import type { MonthActions } from "../../src/engine/simulation/types.js";
-import { HOSPITALITY_MARKET, SERVICE_MARKET, SUBSCRIPTION_MARKET } from "../../src/scenarios/markets.js";
+import {
+  AGENCY_MARKET,
+  HOSPITALITY_MARKET,
+  RETAIL_MARKET,
+  SERVICE_MARKET,
+  SUBSCRIPTION_MARKET,
+} from "../../src/scenarios/markets.js";
 
 const BIRTH_DATE = { year: 2008, month: 1 };
 const START_DATE = { year: 2026, month: 1 };
@@ -161,5 +167,116 @@ describe("multi-entreprises", () => {
     expect(svc!.business.treasury.cash).toBeGreaterThan(0);
     expect(resto).toBeUndefined(); // liquidée
     expect(state.memory.some((e) => e.kind === "business-liquidated")).toBe(true);
+  });
+
+  it("les 5/5 familles P0 sont réellement jouables simultanément via simulateMonth (spec de clôture M9.5)", () => {
+    let state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [
+      SERVICE_MARKET,
+      HOSPITALITY_MARKET,
+      SUBSCRIPTION_MARKET,
+      RETAIL_MARKET,
+      AGENCY_MARKET,
+    ]);
+
+    const actions: MonthActions = {
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
+      jobHourlyWage: null,
+      businessActions: [
+        {
+          businessId: "svc",
+          founderHoursAllocated: 30,
+          create: {
+            family: "service",
+            marketId: SERVICE_MARKET.id,
+            costPerLaborHour: 8,
+            averageMonthlySalary: 2_000,
+            creditLineLimit: 10_000,
+            creditLineInterestRateAnnual: 0.08,
+          },
+          decisions: { family: "service", price: 40, targetHours: 100_000 },
+          marketingBudget: 50,
+          rentBudget: 50,
+          adminBudget: 50,
+        },
+        {
+          businessId: "resto",
+          founderHoursAllocated: 30,
+          create: {
+            family: "hospitality",
+            marketId: HOSPITALITY_MARKET.id,
+            foodCostPerCover: 9,
+            averageMonthlySalary: 2_000,
+            creditLineLimit: 30_000,
+            creditLineInterestRateAnnual: 0.09,
+          },
+          decisions: { family: "hospitality", averageTicketPrice: 25, expectedDemandCovers: 100_000 },
+          marketingBudget: 50,
+          rentBudget: 200,
+          adminBudget: 50,
+          capex: 5_000,
+        },
+        {
+          businessId: "saas",
+          founderHoursAllocated: 30,
+          create: {
+            family: "subscription",
+            marketId: SUBSCRIPTION_MARKET.id,
+            arpu: 29,
+            churnRateBase: 0.04,
+            cogsRatio: 0.2,
+            initialActiveSubscribers: 0,
+            averageMonthlySalary: 3_000,
+            creditLineLimit: 10_000,
+            creditLineInterestRateAnnual: 0.08,
+          },
+          decisions: { family: "subscription", newSubscribers: 50 },
+          marketingBudget: 100,
+          rentBudget: 50,
+          adminBudget: 50,
+        },
+        {
+          businessId: "fleur",
+          founderHoursAllocated: 30,
+          create: {
+            family: "retail",
+            marketId: RETAIL_MARKET.id,
+            unitCostOfGoods: 6,
+            averageMonthlySalary: 1_800,
+            creditLineLimit: 10_000,
+            creditLineInterestRateAnnual: 0.08,
+          },
+          decisions: { family: "retail", unitPrice: 15, stockUnits: 1_000, expectedFootTraffic: 3_000 },
+          marketingBudget: 50,
+          rentBudget: 100,
+          adminBudget: 50,
+        },
+        {
+          businessId: "conseil",
+          founderHoursAllocated: 30,
+          create: {
+            family: "agency",
+            marketId: AGENCY_MARKET.id,
+            averageMonthlyFeePerMandate: 4_000,
+            deliveryCostRatio: 0.3,
+            averageMonthlySalary: 3_500,
+            creditLineLimit: 10_000,
+            creditLineInterestRateAnnual: 0.08,
+          },
+          decisions: { family: "agency", targetMandates: 1_000 },
+          marketingBudget: 50,
+          rentBudget: 50,
+          adminBudget: 50,
+        },
+      ],
+    };
+
+    const next = simulateMonth(state, actions, SEED);
+    expect(next.businesses).toHaveLength(5);
+    const families = next.businesses.map((b) => b.familyState.family).sort();
+    expect(families).toEqual(["agency", "hospitality", "retail", "service", "subscription"]);
+    for (const business of next.businesses) {
+      expect(business.lastStatement).not.toBeUndefined();
+      expect(Number.isFinite(business.lastStatement!.revenue)).toBe(true);
+    }
   });
 });

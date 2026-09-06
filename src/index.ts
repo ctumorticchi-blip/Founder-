@@ -60,6 +60,7 @@ export { ECONOMIC_FAMILIES } from "./types/business.js";
 export { computeMonthlyFinancials, consolidateContributions } from "./engine/business/accounting.js";
 export {
   INSOLVENCY_THRESHOLD_MONTHS,
+  UNPAID_OBLIGATIONS_PENALTY_RATE_MONTHLY,
   applyMonthlyCashFlow,
   computeMonthlyInterest,
   createBusiness,
@@ -132,7 +133,6 @@ export type {
   CreateBusinessSpec,
   GameState,
   MonthActions,
-  OrchestratedFamily,
   OwnedBusiness,
 } from "./engine/simulation/types.js";
 export { createInitialGameState } from "./engine/simulation/game.js";

@@ -52,3 +52,35 @@ export const SUBSCRIPTION_MARKET: Market = {
   entryBarriers: 0.2,
   cyclicality: 0.1,
 };
+
+export const RETAIL_MARKET: Market = {
+  id: "fleuriste-quartier",
+  family: "retail",
+  sizeMonthlyRevenuePotential: 1_500_000,
+  growthRateMonthly: 0.006,
+  averageMargin: 0.35,
+  fragmentation: 0.85,
+  competitiveIntensity: 0.3,
+  capitalIntensity: 0.2,
+  regulation: 0.1,
+  innovationRate: 0.1,
+  priceSensitivity: 0.5,
+  entryBarriers: 0.1,
+  cyclicality: 0.3,
+};
+
+export const AGENCY_MARKET: Market = {
+  id: "conseil-marketing-b2b",
+  family: "agency",
+  sizeMonthlyRevenuePotential: 4_000_000,
+  growthRateMonthly: 0.01,
+  averageMargin: 0.5,
+  fragmentation: 0.6,
+  competitiveIntensity: 0.35,
+  capitalIntensity: 0.05,
+  regulation: 0.1,
+  innovationRate: 0.2,
+  priceSensitivity: 0.35,
+  entryBarriers: 0.2,
+  cyclicality: 0.25,
+};

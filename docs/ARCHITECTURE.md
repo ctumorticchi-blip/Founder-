@@ -85,18 +85,26 @@ portefeuille. Ajouter une famille supplémentaire à l'orchestrateur = ajouter
 un cas dans le switch de `businessResolution.ts`, sans toucher à la boucle
 mensuelle elle-même.
 
-Limite assumée : seules les familles Service, Hospitality et Subscription
-sont câblées dans l'orchestrateur. Retail et Agency restent des
-`EconomicEngine` purs et testés isolément (M3) mais pas encore branchés —
-même mécanique à suivre le jour où c'est nécessaire.
+Depuis M9.5, les 5/5 familles économiques du P0 (Service, Hospitality,
+Subscription, Retail, Agency) sont câblées dans l'orchestrateur, avec
+exactement la même mécanique : effectif -> capacité (heures pour
+Service/Hospitality/Retail via une constante d'heures par unité/couvert,
+mandats pour Agency, effectif support pour Subscription) -> moteur
+économique pur (inchangé depuis M3) -> comptabilité -> trésorerie.
 
 ### 2.2 Trésorerie et employés comme systèmes transversaux
 
 - `engine/business/treasury.ts` porte la trésorerie (spec §3.9) : cash
-  toujours ≥ 0, ligne de crédit avec plafond, compteur de mois de découvert
-  non couvert, insolvabilité. Aucun moteur économique n'y touche
-  directement ; seule `businessResolution.ts` orchestre l'appel après avoir
-  assemblé le compte de résultat du mois.
+  toujours ≥ 0, ligne de crédit avec plafond, obligations impayées
+  persistantes (`unpaidObligations`, remboursées en priorité dès que du
+  cash redevient disponible, avec une pénalité de retard progressive tant
+  qu'elles restent dues), insolvabilité après un nombre de mois consécutifs
+  d'impayé. Aucun coût engagé ne disparaît jamais sans contrepartie
+  économique (identité de conservation testée : `cash - créditTiré -
+  impayés` ne varie que du cash-flow du mois moins la pénalité de retard).
+  Aucun moteur économique n'y touche directement ; seule
+  `businessResolution.ts` orchestre l'appel après avoir assemblé le compte
+  de résultat du mois.
 - `engine/employees/employees.ts` porte l'effectif agrégé (spec §3.9) :
   recrutement/licenciement avec coût réel, masse salariale, traduction
   effectif <-> heures de production (modulée par le leadership du

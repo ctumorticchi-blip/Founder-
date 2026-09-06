@@ -139,14 +139,14 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
       events.push({
         kind: "business-liquidated",
         date: nextDate,
-        message: `Liquidation forcée de "${owned.id}" après ${resolved.updated.business.treasury.consecutiveUnmetShortfallMonths} mois de besoin de financement non couvert.`,
+        message: `Liquidation forcée de "${owned.id}" après ${resolved.updated.business.treasury.consecutiveUnpaidMonths} mois d'obligations impayées (solde dû : ${Math.round(resolved.updated.business.treasury.unpaidObligations)}).`,
       });
     } else {
-      if (resolved.updated.business.treasury.consecutiveUnmetShortfallMonths === INSOLVENCY_THRESHOLD_MONTHS - 1) {
+      if (resolved.updated.business.treasury.consecutiveUnpaidMonths === INSOLVENCY_THRESHOLD_MONTHS - 1) {
         events.push({
           kind: "cash-crisis-warning",
           date: nextDate,
-          message: `"${owned.id}" : besoin de financement non couvert depuis plusieurs mois, liquidation proche si rien ne change.`,
+          message: `"${owned.id}" : obligations impayées depuis plusieurs mois (solde dû : ${Math.round(resolved.updated.business.treasury.unpaidObligations)}), liquidation proche si rien ne change.`,
         });
       }
       businesses.push(resolved.updated);

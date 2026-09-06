@@ -7,15 +7,7 @@ import type { AggregateCompetition } from "../../types/competition.js";
 import type { MacroState } from "../../types/world.js";
 import type { GameEvent, MemoryEntry } from "../../types/narrative.js";
 
-/**
- * Familles économiques réellement câblées dans l'orchestrateur (spec de
- * consolidation, §3/§4). Retail et Agency restent des `EconomicEngine`
- * purs et testés (M3) mais ne sont pas encore branchés ici — voir
- * docs/MILESTONES.md pour la limite assumée.
- */
-export type OrchestratedFamily = "service" | "hospitality" | "subscription";
-
-/** État persistant propre à chaque famille câblée, en plus de `BusinessState`/`WorkforceState` communs. */
+/** État persistant propre à chaque famille, en plus de `BusinessState`/`WorkforceState` communs. */
 export type BusinessFamilyState =
   | { readonly family: "service"; readonly reputationScore: number; readonly costPerLaborHour: number }
   | { readonly family: "hospitality"; readonly reputationScore: number; readonly foodCostPerCover: number }
@@ -25,13 +17,22 @@ export type BusinessFamilyState =
       readonly arpu: number;
       readonly churnRateBase: number;
       readonly cogsRatio: number;
+    }
+  | { readonly family: "retail"; readonly reputationScore: number; readonly unitCostOfGoods: number }
+  | {
+      readonly family: "agency";
+      readonly reputationScore: number;
+      readonly averageMonthlyFeePerMandate: number;
+      readonly deliveryCostRatio: number;
     };
 
 /** Décisions mensuelles propres à chaque famille (hors budgets transversaux, communs à toutes). */
 export type BusinessFamilyDecisions =
   | { readonly family: "service"; readonly price: number; readonly targetHours: number }
   | { readonly family: "hospitality"; readonly averageTicketPrice: number; readonly expectedDemandCovers: number }
-  | { readonly family: "subscription"; readonly newSubscribers: number };
+  | { readonly family: "subscription"; readonly newSubscribers: number }
+  | { readonly family: "retail"; readonly unitPrice: number; readonly stockUnits: number; readonly expectedFootTraffic: number }
+  | { readonly family: "agency"; readonly targetMandates: number };
 
 /** Une entreprise possédée par le joueur (spec §3 : plusieurs entreprises et familles possibles). */
 export interface OwnedBusiness {
@@ -75,6 +76,23 @@ export type CreateBusinessSpec =
       readonly churnRateBase: number;
       readonly cogsRatio: number;
       readonly initialActiveSubscribers: number;
+      readonly averageMonthlySalary: number;
+      readonly creditLineLimit: number;
+      readonly creditLineInterestRateAnnual: number;
+    }
+  | {
+      readonly family: "retail";
+      readonly marketId: string;
+      readonly unitCostOfGoods: number;
+      readonly averageMonthlySalary: number;
+      readonly creditLineLimit: number;
+      readonly creditLineInterestRateAnnual: number;
+    }
+  | {
+      readonly family: "agency";
+      readonly marketId: string;
+      readonly averageMonthlyFeePerMandate: number;
+      readonly deliveryCostRatio: number;
       readonly averageMonthlySalary: number;
       readonly creditLineLimit: number;
       readonly creditLineInterestRateAnnual: number;
