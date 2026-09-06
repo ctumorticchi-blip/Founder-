@@ -35,7 +35,7 @@ const BASE_UTILIZATION = 0.5;
 const REPUTATION_UTILIZATION_BONUS = 0.4;
 const UTILIZATION_NOISE_STD_DEV = 0.05;
 
-function computeServiceMonth(
+export function computeServiceMonth(
   state: ServiceEngineState,
   decisions: ServiceEngineDecisions,
   ctx: EconomicEngineContext,

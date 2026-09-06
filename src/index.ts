@@ -50,6 +50,7 @@ export { applyCashFlow, createBusiness } from "./engine/business/cash.js";
 export type { EconomicEngine, EconomicEngineContext } from "./engine/economic-models/economic-engine.js";
 export {
   ServiceEngine,
+  computeServiceMonth,
   type ServiceEngineDecisions,
   type ServiceEngineState,
   type ServiceMonthContribution,
@@ -95,3 +96,16 @@ export {
 
 export type { Estimate, MarketEstimate } from "./types/intelligence.js";
 export { type IntelligenceSkills, projectMarketView } from "./engine/intelligence/intelligence.js";
+
+export type { GameEvent, GameEventKind, MemoryEntry } from "./types/narrative.js";
+export { appendToMemory } from "./engine/narrative/narrative.js";
+
+export type {
+  BusinessDecisionsAction,
+  CreateBusinessAction,
+  GameState,
+  MonthActions,
+  PlayerBusinessState,
+} from "./engine/simulation/types.js";
+export { createInitialGameState } from "./engine/simulation/game.js";
+export { simulateMonth } from "./engine/simulation/simulateMonth.js";

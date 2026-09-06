@@ -2,6 +2,11 @@
 
 Chaque milestone est commit(é)+push(é) séparément une fois ses tests verts.
 
+Statut : M0 à M5 complétés (voir l'historique git de la branche pour les
+SHA de chaque milestone). Le P0 tel que défini dans `docs/SPEC_P0.md` est
+fonctionnellement complet côté moteur ; M6 (harnais headless) reste
+optionnel.
+
 ## M0 — Scaffolding + documentation (ce commit)
 - `docs/SPEC_P0.md`, `docs/ARCHITECTURE.md`, `docs/MILESTONES.md`.
 - Squelette du projet TypeScript : `package.json`, `tsconfig.json`,
