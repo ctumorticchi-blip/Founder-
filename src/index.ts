@@ -36,6 +36,17 @@ export {
   createInitialCharacter,
 } from "./engine/character/character.js";
 
+export type { HeadcountAdjustmentResult, WorkforceState } from "./types/employees.js";
+export {
+  HOURS_PER_EMPLOYEE_PER_MONTH,
+  adjustHeadcount,
+  computePayrollCost,
+  computeRequiredHeadcountForHours,
+  computeStaffingRatio,
+  computeWorkforceCapacityHours,
+  createWorkforce,
+} from "./engine/employees/employees.js";
+
 export type {
   BusinessState,
   EconomicContribution,
