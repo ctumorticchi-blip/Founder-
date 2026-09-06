@@ -35,3 +35,22 @@ export {
   applySkillGain,
   createInitialCharacter,
 } from "./engine/character/character.js";
+
+export type {
+  BusinessState,
+  EconomicContribution,
+  EconomicFamily,
+  MonthlyFinancialStatement,
+  MonthlyFinancialStatementInputs,
+} from "./types/business.js";
+export { ECONOMIC_FAMILIES } from "./types/business.js";
+export { computeMonthlyFinancials, consolidateContributions } from "./engine/business/accounting.js";
+export { applyCashFlow, createBusiness } from "./engine/business/cash.js";
+
+export type { EconomicEngine, EconomicEngineContext } from "./engine/economic-models/economic-engine.js";
+export {
+  ServiceEngine,
+  type ServiceEngineDecisions,
+  type ServiceEngineState,
+  type ServiceMonthContribution,
+} from "./engine/economic-models/service.js";
