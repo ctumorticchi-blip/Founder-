@@ -54,3 +54,27 @@ export {
   type ServiceEngineState,
   type ServiceMonthContribution,
 } from "./engine/economic-models/service.js";
+export {
+  RetailEngine,
+  type RetailEngineDecisions,
+  type RetailEngineState,
+  type RetailMonthContribution,
+} from "./engine/economic-models/retail.js";
+export {
+  HospitalityEngine,
+  type HospitalityEngineDecisions,
+  type HospitalityEngineState,
+  type HospitalityMonthContribution,
+} from "./engine/economic-models/hospitality.js";
+export {
+  AgencyEngine,
+  type AgencyEngineDecisions,
+  type AgencyEngineState,
+  type AgencyMonthContribution,
+} from "./engine/economic-models/agency.js";
+export {
+  SubscriptionEngine,
+  type SubscriptionEngineDecisions,
+  type SubscriptionEngineState,
+  type SubscriptionMonthContribution,
+} from "./engine/economic-models/subscription.js";
