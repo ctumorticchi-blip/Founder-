@@ -1,0 +1,9 @@
+/**
+ * Contrainte une valeur dans [min, max]. Utilitaire pur, sans état.
+ */
+export function clamp(value: number, min: number, max: number): number {
+  if (min > max) {
+    throw new RangeError(`clamp: min (${min}) > max (${max})`);
+  }
+  return Math.min(max, Math.max(min, value));
+}
