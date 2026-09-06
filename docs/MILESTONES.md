@@ -2,10 +2,12 @@
 
 Chaque milestone est commit(é)+push(é) séparément une fois ses tests verts.
 
-Statut : M0 à M5 complétés (voir l'historique git de la branche pour les
-SHA de chaque milestone). Le P0 tel que défini dans `docs/SPEC_P0.md` est
-fonctionnellement complet côté moteur ; M6 (harnais headless) reste
-optionnel.
+Statut : M0 à M9 complétés (voir l'historique git de la branche pour les
+SHA de chaque milestone). Le P0 est fonctionnellement complet côté moteur,
+et une passe de consolidation (M6-M9) a corrigé deux lacunes identifiées
+après revue : le système d'employés (jusque-là no-op) et un modèle de
+faillite jugé trop naïf ("6 mois de cash négatif" sans mécanisme de
+financement explicite).
 
 ## M0 — Scaffolding + documentation (ce commit)
 - `docs/SPEC_P0.md`, `docs/ARCHITECTURE.md`, `docs/MILESTONES.md`.
@@ -67,11 +69,56 @@ optionnel.
   mène à un patrimoine net ≈ 1 M€+), sans branche de code spécifique à
   chaque issue.
 
-## M6 (stretch, si le temps le permet) — Harnais headless de démonstration
-- Script/CLI qui joue une séquence d'actions prédéfinie mois après mois et
-  imprime l'état (`PlayerView`) — preuve que l'UI n'aurait qu'à afficher.
-- Aucune logique de simulation dans ce harnais : uniquement des appels au
-  moteur.
+## Consolidation post-P0 (M6-M9)
+
+Demandée après revue du P0 : le no-op "employés" et la liquidation naïve
+étaient jugés insuffisants pour que le P0 soit réellement complet.
+
+### M6 — Système d'employés
+- `types/employees.ts`, `engine/employees` : effectif agrégé, recrutement/
+  licenciement avec coût réel imputé au mois, masse salariale, traduction
+  effectif -> heures de production modulée par le leadership du fondateur.
+- **Tests** : coût de recrutement/licenciement, capacité apportée par
+  effectif + leadership, ratio de staffing (sous/sur-effectif).
+
+### M7 — Trésorerie réaliste (remplace "6 mois de cash négatif")
+- `types/business.ts` : `BusinessState.cash` -> `TreasuryState` (cash
+  toujours ≥ 0, ligne de crédit avec plafond, compteur de découvert non
+  couvert, insolvabilité).
+- `engine/business/treasury.ts` (remplace `cash.ts`) : cascade de
+  financement explicite (remboursement de crédit prioritaire si excédent,
+  tirage sur la ligne de crédit si déficit, insolvabilité après 6 mois de
+  découvert non couvert persistant) + `injectCapital` (apport de capital).
+- **Tests** : les 4 scénarios demandés (rentable mais illiquide, déficitaire
+  mais solvable, sauvé par apport, faillite réelle).
+
+### M8 — Orchestrateur multi-entreprises/multi-familles
+- `GameState.businesses` (liste), `GameState.markets`/`competitions`
+  (par marché). Unions discriminées par famille pour l'état/les décisions
+  (Service, Hospitality, Subscription câblés ; Retail/Agency restent des
+  `EconomicEngine` purs non branchés — limite assumée).
+- `engine/simulation/businessResolution.ts` : résolution d'un mois pour une
+  entreprise (effectif -> capacité -> moteur pur -> comptabilité ->
+  trésorerie), réutilisée par la boucle mensuelle pour chaque entreprise du
+  portefeuille.
+- **Tests** : validations strictes (action manquante, création dupliquée,
+  budget d'heures fondateur dépassé), correction connexe de l'interface
+  `EconomicEngine` (le type de retour ne portait pas les champs propres à
+  chaque famille sous un vrai `tsc --noEmit` sur les tests).
+
+### M9 — Vertical slices, démonstrateur CLI, tests de garde
+- `src/scenarios/{service,hospitality,subscription}.ts` : politiques de
+  décision cannées sur 20 ans (240 mois), réutilisées par les tests ET le
+  CLI (jamais de branche dans le moteur pour garantir un résultat).
+- `src/cli/run.ts` : démonstrateur headless (journal lisible par année,
+  `--verify-determinism` pour comparer deux runs de même seed).
+- **Tests** : 3 vertical slices longues (déterminisme, étapes traversées,
+  issue cohérente), multi-entreprises simultanées de familles différentes,
+  impossibilité de dépenser sans source de financement, effet de capacité/
+  sur-effectif/sous-effectif, garde explicite anti-`Math.random`/`Date` sur
+  tout `src/`.
 
 ## Hors périmètre de ces milestones
-Voir `docs/SPEC_P0.md` §2 (IPO, M&A majeur, dynastie, etc.).
+Voir `docs/SPEC_P0.md` §2 (IPO, M&A majeur, dynastie, etc.). Retail et
+Agency ne sont pas câblés dans l'orchestrateur (restent des `EconomicEngine`
+purs testés isolément).

@@ -171,7 +171,7 @@ export function resolveBusinessMonth(
     depreciation: 0,
     interest,
     taxRate: TAX_RATE,
-    capex: 0,
+    capex: action.capex ?? 0,
     workingCapitalChange: 0,
   });
 
@@ -182,7 +182,7 @@ export function resolveBusinessMonth(
   const { business, outcome } = applyMonthlyCashFlow(businessBeforeCashFlow, statement);
 
   return {
-    updated: { ...owned, business, workforce: headcountResult.workforce, familyState },
+    updated: { ...owned, business, workforce: headcountResult.workforce, familyState, lastStatement: statement },
     statement,
     outcome,
     hired: headcountResult.hired,

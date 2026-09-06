@@ -1,6 +1,6 @@
 import type { GameDate } from "../time/clock.js";
 import type { CharacterState, TimeCategory } from "../../types/character.js";
-import type { BusinessState } from "../../types/business.js";
+import type { BusinessState, MonthlyFinancialStatement } from "../../types/business.js";
 import type { WorkforceState } from "../../types/employees.js";
 import type { Market } from "../../types/market.js";
 import type { AggregateCompetition } from "../../types/competition.js";
@@ -40,6 +40,15 @@ export interface OwnedBusiness {
   readonly workforce: WorkforceState;
   readonly marketId: string;
   readonly familyState: BusinessFamilyState;
+  /**
+   * Compte de résultat du dernier mois résolu (spec : l'UI ne calcule rien,
+   * elle affiche l'état produit par le moteur — CA/résultat doivent donc
+   * être une sortie du moteur, pas recalculés côté consommateur).
+   * Absent uniquement à l'instant de la création, avant la première
+   * résolution mensuelle (toujours définie dans un `GameState` retourné par
+   * `simulateMonth`).
+   */
+  readonly lastStatement?: MonthlyFinancialStatement;
 }
 
 export type CreateBusinessSpec =
@@ -87,6 +96,8 @@ export interface BusinessAction {
   readonly marketingBudget: number;
   readonly rentBudget: number;
   readonly adminBudget: number;
+  /** Investissement ponctuel ce mois-ci (équipement, aménagement...). Omis = 0. */
+  readonly capex?: number;
   /** Effectif cible ce mois-ci (recrutement/licenciement vers cette cible). Omis = effectif inchangé. */
   readonly targetHeadcount?: number;
   /** Apport de capital personnel dans cette entreprise ce mois-ci (spec : "sauvé par apport"). */

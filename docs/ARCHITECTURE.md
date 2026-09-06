@@ -42,25 +42,68 @@
       character/           # Character Engine
       world/               # World Engine (macro)
       market/              # Marchés
-      business/            # Business Engine (comptabilité consolidée)
+      business/            # Business Engine (comptabilité + trésorerie/crédit)
+      employees/           # Employees/Organisation (effectif, capacité, coûts)
       economic-models/     # Retail, Service, Hospitality, Agency, Subscription
       competition/         # Competition Engine
       intelligence/        # Intelligence Engine (Truth -> PlayerView)
       narrative/           # Narrative Engine (événements, mémoire)
-      simulation/          # Orchestrateur de la boucle mensuelle (§10 spec)
+      simulation/          # Orchestrateur multi-entreprises (§10 spec)
+    scenarios/              # Politiques de décision cannées (vertical slices,
+                             # réutilisées par les tests ET le CLI — jamais de
+                             # logique de simulation ici, uniquement des décisions)
+    cli/                    # Démonstrateur headless (run.ts)
     index.ts               # Point d'entrée public du package moteur
   test/
     <miroir de src/>       # Tests unitaires par module
-    scenarios/             # Tests de trajectoire bout-en-bout (déterminisme)
+    scenarios/             # Trajectoires bout-en-bout : déterminisme, vertical
+                            # slices longues, multi-entreprises
+    guards/                # Gardes-fous transverses (ex. absence de
+                            # Math.random/Date dans src/, au-delà d'ESLint)
   package.json
   tsconfig.json
+  tsconfig.eslint.json      # Typecheck src+test (rootDir élargi), utilisé par
+                             # `npm run typecheck:test` et par ESLint
   vitest.config.ts
   .eslintrc.cjs / eslint.config.js
 ```
 
 Règle : un fichier de `engine/*` ne dépasse pas ~200-300 lignes ; au-delà, on
-découpe par sous-domaine (ex. `business/accounting.ts`, `business/cash.ts`)
+découpe par sous-domaine (ex. `business/accounting.ts`, `business/treasury.ts`)
 plutôt que de laisser grossir un fichier unique.
+
+### 2.1 Portefeuille multi-entreprises (consolidation post-P0)
+
+`GameState.businesses` est une liste (`OwnedBusiness[]`), pas une entreprise
+unique : le joueur peut posséder plusieurs entreprises, de familles
+différentes, chacune sur son propre marché (`GameState.markets`/
+`competitions` sont indexés par `marketId`). `engine/simulation/
+businessResolution.ts` résout un mois pour UNE entreprise (effectif ->
+capacité -> moteur économique pur -> comptabilité -> trésorerie) ; `engine/
+simulation/simulateMonth.ts` boucle sur toutes les entreprises actives du
+portefeuille. Ajouter une famille supplémentaire à l'orchestrateur = ajouter
+un cas dans le switch de `businessResolution.ts`, sans toucher à la boucle
+mensuelle elle-même.
+
+Limite assumée : seules les familles Service, Hospitality et Subscription
+sont câblées dans l'orchestrateur. Retail et Agency restent des
+`EconomicEngine` purs et testés isolément (M3) mais pas encore branchés —
+même mécanique à suivre le jour où c'est nécessaire.
+
+### 2.2 Trésorerie et employés comme systèmes transversaux
+
+- `engine/business/treasury.ts` porte la trésorerie (spec §3.9) : cash
+  toujours ≥ 0, ligne de crédit avec plafond, compteur de mois de découvert
+  non couvert, insolvabilité. Aucun moteur économique n'y touche
+  directement ; seule `businessResolution.ts` orchestre l'appel après avoir
+  assemblé le compte de résultat du mois.
+- `engine/employees/employees.ts` porte l'effectif agrégé (spec §3.9) :
+  recrutement/licenciement avec coût réel, masse salariale, traduction
+  effectif <-> heures de production (modulée par le leadership du
+  fondateur). Chaque famille économique traduit différemment capacité et
+  effectif requis (heures pour Service/Hospitality, effectif support pour
+  Subscription) — cette traduction vit dans `businessResolution.ts`, jamais
+  dans les moteurs économiques eux-mêmes (qui restent inchangés depuis M3).
 
 ## 3. Flux de données
 

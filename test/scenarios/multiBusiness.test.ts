@@ -1,0 +1,165 @@
+import { describe, expect, it } from "vitest";
+import { createInitialGameState } from "../../src/engine/simulation/game.js";
+import { simulateMonth } from "../../src/engine/simulation/simulateMonth.js";
+import type { MonthActions } from "../../src/engine/simulation/types.js";
+import { HOSPITALITY_MARKET, SERVICE_MARKET, SUBSCRIPTION_MARKET } from "../../src/scenarios/markets.js";
+
+const BIRTH_DATE = { year: 2008, month: 1 };
+const START_DATE = { year: 2026, month: 1 };
+const SEED = 555;
+
+/**
+ * Le portefeuille du joueur n'est plus limité à une seule entreprise
+ * (consolidation, tâche 3). Ces tests font tourner 2-3 entreprises de
+ * familles différentes simultanément avec le même `simulateMonth`.
+ */
+describe("multi-entreprises", () => {
+  it("fait tourner 3 entreprises de familles différentes en parallèle, chacune avec ses propres finances", () => {
+    let state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [SERVICE_MARKET, HOSPITALITY_MARKET, SUBSCRIPTION_MARKET]);
+
+    const actions: MonthActions = {
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
+      jobHourlyWage: null,
+      businessActions: [
+        {
+          businessId: "svc",
+          founderHoursAllocated: 50,
+          create: {
+            family: "service",
+            marketId: SERVICE_MARKET.id,
+            costPerLaborHour: 8,
+            averageMonthlySalary: 2_000,
+            creditLineLimit: 20_000,
+            creditLineInterestRateAnnual: 0.08,
+          },
+          decisions: { family: "service", price: 40, targetHours: 100_000 },
+          marketingBudget: 100,
+          rentBudget: 200,
+          adminBudget: 50,
+        },
+        {
+          businessId: "resto",
+          founderHoursAllocated: 50,
+          create: {
+            family: "hospitality",
+            marketId: HOSPITALITY_MARKET.id,
+            foodCostPerCover: 9,
+            averageMonthlySalary: 2_000,
+            creditLineLimit: 60_000,
+            creditLineInterestRateAnnual: 0.09,
+          },
+          decisions: { family: "hospitality", averageTicketPrice: 25, expectedDemandCovers: 100_000 },
+          marketingBudget: 200,
+          rentBudget: 1_000,
+          adminBudget: 100,
+          targetHeadcount: 3,
+          capex: 20_000,
+        },
+        {
+          businessId: "saas",
+          founderHoursAllocated: 50,
+          create: {
+            family: "subscription",
+            marketId: SUBSCRIPTION_MARKET.id,
+            arpu: 29,
+            churnRateBase: 0.04,
+            cogsRatio: 0.2,
+            initialActiveSubscribers: 0,
+            averageMonthlySalary: 3_000,
+            creditLineLimit: 20_000,
+            creditLineInterestRateAnnual: 0.08,
+          },
+          decisions: { family: "subscription", newSubscribers: 50 },
+          marketingBudget: 300,
+          rentBudget: 100,
+          adminBudget: 50,
+        },
+      ],
+    };
+
+    const next = simulateMonth(state, actions, SEED);
+    expect(next.businesses).toHaveLength(3);
+    const ids = next.businesses.map((b) => b.id).sort();
+    expect(ids).toEqual(["resto", "saas", "svc"]);
+
+    // Chaque entreprise a sa propre trésorerie, indépendante des autres.
+    const svc = next.businesses.find((b) => b.id === "svc")!;
+    const resto = next.businesses.find((b) => b.id === "resto")!;
+    const saas = next.businesses.find((b) => b.id === "saas")!;
+    expect(svc.business.treasury).not.toEqual(resto.business.treasury);
+    expect(resto.business.treasury.creditLine.drawn).toBeGreaterThan(0); // absorbe le CAPEX de lancement
+    expect(saas.familyState.family).toBe("subscription");
+
+    state = next;
+  });
+
+  it("la faillite d'une entreprise n'affecte pas les autres entreprises du portefeuille", () => {
+    let state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [SERVICE_MARKET, HOSPITALITY_MARKET]);
+
+    const healthyAction = (businessId: string, isCreation: boolean) => ({
+      businessId,
+      founderHoursAllocated: 75,
+      ...(isCreation
+        ? {
+            create: {
+              family: "service" as const,
+              marketId: SERVICE_MARKET.id,
+              costPerLaborHour: 8,
+              averageMonthlySalary: 2_000,
+              creditLineLimit: 30_000,
+              creditLineInterestRateAnnual: 0.08,
+            },
+          }
+        : {}),
+      decisions: { family: "service" as const, price: 45, targetHours: 100_000 },
+      marketingBudget: 100,
+      rentBudget: 200,
+      adminBudget: 50,
+    });
+
+    const ruinousAction = (businessId: string, isCreation: boolean) => ({
+      businessId,
+      founderHoursAllocated: 75,
+      ...(isCreation
+        ? {
+            create: {
+              family: "hospitality" as const,
+              marketId: HOSPITALITY_MARKET.id,
+              foodCostPerCover: 200,
+              averageMonthlySalary: 2_000,
+              creditLineLimit: 500,
+              creditLineInterestRateAnnual: 0.1,
+            },
+          }
+        : {}),
+      decisions: { family: "hospitality" as const, averageTicketPrice: 1, expectedDemandCovers: 10 },
+      marketingBudget: 5_000,
+      rentBudget: 5_000,
+      adminBudget: 5_000,
+    });
+
+    for (let month = 0; month < 10; month++) {
+      const isCreation = month === 0;
+      state = simulateMonth(
+        state,
+        {
+          timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
+          jobHourlyWage: null,
+          businessActions: [
+            healthyAction("svc", isCreation),
+            ...(state.businesses.some((b) => b.id === "resto") || isCreation ? [ruinousAction("resto", isCreation)] : []),
+          ],
+        },
+        SEED,
+      );
+    }
+
+    const svc = state.businesses.find((b) => b.id === "svc");
+    const resto = state.businesses.find((b) => b.id === "resto");
+    expect(svc).not.toBeUndefined();
+    expect(svc!.business.treasury.isInsolvent).toBe(false);
+    expect(svc!.business.treasury.cash).toBeGreaterThan(0);
+    expect(resto).toBeUndefined(); // liquidée
+    expect(state.memory.some((e) => e.kind === "business-liquidated")).toBe(true);
+  });
+});
