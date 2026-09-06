@@ -1,25 +1,17 @@
 import { createRng, deriveSeed } from "../rng/rng.js";
 import { addMonths, toMonthIndex } from "../time/clock.js";
-import { clamp } from "../util/math.js";
 import { advanceMacro } from "../world/world.js";
 import { advanceMarket, detectMarketInefficiency } from "../market/market.js";
 import { advanceAggregateCompetition, availableDemandShare } from "../competition/competition.js";
 import { allocateTime, applySkillGain } from "../character/character.js";
 import { TIME_CATEGORIES, type SkillName, type TimeCategory } from "../../types/character.js";
-import { computeMonthlyFinancials } from "../business/accounting.js";
-import { applyCashFlow, createBusiness } from "../business/cash.js";
-import { computeServiceMonth, type ServiceEngineState } from "../economic-models/service.js";
+import { INSOLVENCY_THRESHOLD_MONTHS } from "../business/treasury.js";
 import { appendToMemory } from "../narrative/narrative.js";
+import { createOwnedBusiness, resolveBusinessMonth } from "./businessResolution.js";
 import type { GameEvent } from "../../types/narrative.js";
-import type { GameState, MonthActions, PlayerBusinessState } from "./types.js";
-
-/**
- * Mois consécutifs à trésorerie négative avant liquidation forcée. Le
- * compteur (`consecutiveNegativeCashMonths`, engine/business/cash.ts) est le
- * signal précurseur exigé par la spec §3.7 : ce seuil ne se déclenche jamais
- * sur un seul mois isolé.
- */
-const LIQUIDATION_THRESHOLD_MONTHS = 6;
+import type { Market } from "../../types/market.js";
+import type { AggregateCompetition } from "../../types/competition.js";
+import type { GameState, MonthActions, OwnedBusiness } from "./types.js";
 
 /**
  * Simplification P0 : chaque catégorie de temps fait progresser une seule
@@ -33,30 +25,58 @@ const SKILL_GAIN_PER_HOUR: Readonly<Record<TimeCategory, { skill: SkillName; rat
   reseau: { skill: "reseau", ratePerHour: 0.04 },
 };
 
-function computeBusinessCapacityHours(actions: MonthActions, orgCapacityHours: number): number {
-  return actions.timeAllocation.business + orgCapacityHours;
+function validateActions(state: GameState, actions: MonthActions): void {
+  const seenIds = new Set<string>();
+  for (const action of actions.businessActions) {
+    if (seenIds.has(action.businessId)) {
+      throw new RangeError(`simulateMonth: businessId="${action.businessId}" apparaît plusieurs fois dans businessActions.`);
+    }
+    seenIds.add(action.businessId);
+
+    const existing = state.businesses.find((business) => business.id === action.businessId);
+    if (existing && action.create) {
+      throw new RangeError(`simulateMonth: l'entreprise "${action.businessId}" existe déjà, "create" est invalide ce mois-ci.`);
+    }
+    if (!existing && !action.create) {
+      throw new RangeError(`simulateMonth: businessId="${action.businessId}" inconnu et aucun "create" fourni.`);
+    }
+    if (!action.decisions) {
+      throw new RangeError(`simulateMonth: businessId="${action.businessId}" nécessite "decisions" ce mois-ci.`);
+    }
+    if (action.create && !state.markets[action.create.marketId]) {
+      throw new RangeError(`simulateMonth: marché "${action.create.marketId}" inconnu pour businessId="${action.businessId}".`);
+    }
+    if (action.capitalInjection !== undefined && action.capitalInjection < 0) {
+      throw new RangeError(`simulateMonth: capitalInjection négatif pour businessId="${action.businessId}".`);
+    }
+  }
+
+  for (const owned of state.businesses) {
+    if (!seenIds.has(owned.id)) {
+      throw new RangeError(`simulateMonth: l'entreprise active "${owned.id}" nécessite une BusinessAction ce mois-ci.`);
+    }
+  }
+
+  const totalFounderHours = actions.businessActions.reduce((sum, action) => sum + action.founderHoursAllocated, 0);
+  if (totalFounderHours > actions.timeAllocation.business) {
+    throw new RangeError(
+      `simulateMonth: la somme des heures fondateur allouées aux entreprises (${totalFounderHours}h) dépasse le temps "business" alloué (${actions.timeAllocation.business}h).`,
+    );
+  }
 }
 
 /**
  * Résout un mois de simulation (spec §10, ordre imposé) :
  * 1. macro · 2. marchés · 3. concurrence · 4. demande · 5. ventes ·
- * 6. opérations · 7. employés (no-op en P0, pas de headcount) ·
- * 8. comptabilité · 9. cash · 10. personnage · 11. événements · 12. mémoire.
+ * 6. opérations · 7. employés · 8. comptabilité · 9. cash · 10. personnage ·
+ * 11. événements · 12. mémoire.
  *
  * Fonction pure : `state` n'est jamais muté, tout l'aléa vient de `seed`
- * (dérivée déterministe par mois via `deriveSeed`).
+ * (dérivée déterministe par mois via `deriveSeed`). Le portefeuille
+ * d'entreprises n'est plus limité à une seule (spec de consolidation §3).
  */
 export function simulateMonth(state: GameState, actions: MonthActions, seed: number): GameState {
-  if (state.playerBusiness && actions.createBusiness) {
-    throw new RangeError("simulateMonth: une entreprise existe déjà, createBusiness est invalide ce mois-ci.");
-  }
-  if (!state.playerBusiness && !actions.createBusiness && actions.businessDecisions) {
-    throw new RangeError("simulateMonth: businessDecisions fournies mais aucune entreprise n'existe.");
-  }
-  const willHaveBusiness = Boolean(state.playerBusiness) || Boolean(actions.createBusiness);
-  if (willHaveBusiness && !actions.businessDecisions) {
-    throw new RangeError("simulateMonth: une entreprise active nécessite businessDecisions ce mois-ci.");
-  }
+  validateActions(state, actions);
 
   const nextDate = addMonths(state.date, 1);
   const monthSeed = deriveSeed(seed, "month", toMonthIndex(nextDate));
@@ -67,90 +87,74 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
   const macro = advanceMacro(state.macro, nextDate, rng.fork("macro"));
 
   // 2. marchés
-  const market = advanceMarket(state.market, macro, rng.fork("market"));
-
-  // 3. concurrence
-  const competition = advanceAggregateCompetition(state.competition, market, rng.fork("competition"));
-
-  // 4. demande : part du marché non déjà captée par la concurrence de fond
-  const demandShare = availableDemandShare(competition);
-
-  // 5. ventes + 6. opérations (moteur Service, capacité = temps business alloué)
-  let playerBusiness: PlayerBusinessState | null = state.playerBusiness;
-
-  if (!playerBusiness && actions.createBusiness) {
-    playerBusiness = {
-      business: createBusiness("Activité de service du joueur", ["service"]),
-      reputationScore: 0.1,
-      costPerLaborHour: actions.createBusiness.costPerLaborHour,
-    };
-    events.push({
-      kind: "business-created",
-      date: nextDate,
-      message: "Création d'une activité de service.",
-    });
+  const markets: Record<string, Market> = {};
+  for (const [marketId, market] of Object.entries(state.markets)) {
+    markets[marketId] = advanceMarket(market, macro, rng.fork(`market:${marketId}`));
   }
 
-  if (playerBusiness && actions.businessDecisions) {
-    const capacityHours = computeBusinessCapacityHours(actions, state.character.orgCapacity.delegatedHoursPerMonth);
-    const serviceState: ServiceEngineState = {
-      hourlyRate: actions.businessDecisions.price,
-      costPerLaborHour: playerBusiness.costPerLaborHour,
-      reputationScore: playerBusiness.reputationScore,
-    };
-    const contribution = computeServiceMonth(
-      serviceState,
-      {
-        capacityHours,
-        targetHours: actions.businessDecisions.targetHours * demandShare,
-      },
-      { rng: rng.fork("business:service") },
-    );
+  // 3. concurrence
+  const competitions: Record<string, AggregateCompetition> = {};
+  for (const [marketId, competition] of Object.entries(state.competitions)) {
+    competitions[marketId] = advanceAggregateCompetition(competition, markets[marketId]!, rng.fork(`competition:${marketId}`));
+  }
 
-    // 8. comptabilité
-    const statement = computeMonthlyFinancials({
-      revenue: contribution.revenue,
-      variableCosts: contribution.variableCosts,
-      payroll: actions.businessDecisions.payrollBudget,
-      marketing: actions.businessDecisions.marketingBudget,
-      rent: actions.businessDecisions.rentBudget,
-      admin: actions.businessDecisions.adminBudget,
-      depreciation: 0,
-      interest: 0,
-      taxRate: 0.25,
-      capex: 0,
-      workingCapitalChange: 0,
-    });
+  // 4. demande + 5. ventes + 6. opérations + 7. employés + 8. comptabilité + 9. cash
+  // (résolus ensemble par entreprise : chaque famille traduit différemment
+  // effectif/temps -> capacité, voir engine/simulation/businessResolution.ts)
+  let availableCharacterCash =
+    state.character.cash + (actions.jobHourlyWage !== null ? actions.jobHourlyWage * actions.timeAllocation.emploi : 0);
 
-    // 9. cash
-    const updatedBusiness = applyCashFlow(playerBusiness.business, statement);
-    const reputationScore = clamp(playerBusiness.reputationScore + contribution.hoursSold * 0.0005, 0, 1);
-    playerBusiness = { ...playerBusiness, business: updatedBusiness, reputationScore };
+  const businesses: OwnedBusiness[] = [];
+  for (const action of actions.businessActions) {
+    const existing = state.businesses.find((business) => business.id === action.businessId);
+    const owned: OwnedBusiness = existing ?? createOwnedBusiness(action.businessId, action.create!);
+    const isNew = !existing;
 
-    if (updatedBusiness.consecutiveNegativeCashMonths >= LIQUIDATION_THRESHOLD_MONTHS) {
+    if (action.capitalInjection && action.capitalInjection > availableCharacterCash) {
+      throw new RangeError(
+        `simulateMonth: apport de ${action.capitalInjection} dans "${action.businessId}" dépasse le cash personnel disponible (${availableCharacterCash}).`,
+      );
+    }
+    if (action.capitalInjection) {
+      availableCharacterCash -= action.capitalInjection;
+      events.push({
+        kind: "capital-injected",
+        date: nextDate,
+        message: `Apport personnel de ${action.capitalInjection} dans "${action.businessId}".`,
+      });
+    }
+
+    const demandShare = availableDemandShare(competitions[owned.marketId]!);
+    const resolved = resolveBusinessMonth(owned, action, demandShare, state.character.skills.leadership, rng);
+
+    if (isNew) {
+      events.push({
+        kind: "business-created",
+        date: nextDate,
+        message: `Création de l'entreprise "${owned.id}" (${action.create!.family}).`,
+      });
+    }
+
+    if (resolved.updated.business.treasury.isInsolvent) {
       events.push({
         kind: "business-liquidated",
         date: nextDate,
-        message: `Liquidation forcée après ${updatedBusiness.consecutiveNegativeCashMonths} mois consécutifs de trésorerie négative.`,
+        message: `Liquidation forcée de "${owned.id}" après ${resolved.updated.business.treasury.consecutiveUnmetShortfallMonths} mois de besoin de financement non couvert.`,
       });
-      playerBusiness = null;
-    } else if (updatedBusiness.consecutiveNegativeCashMonths === LIQUIDATION_THRESHOLD_MONTHS - 1) {
-      events.push({
-        kind: "cash-crisis-warning",
-        date: nextDate,
-        message: "Trésorerie négative depuis plusieurs mois : liquidation proche si rien ne change.",
-      });
+    } else {
+      if (resolved.updated.business.treasury.consecutiveUnmetShortfallMonths === INSOLVENCY_THRESHOLD_MONTHS - 1) {
+        events.push({
+          kind: "cash-crisis-warning",
+          date: nextDate,
+          message: `"${owned.id}" : besoin de financement non couvert depuis plusieurs mois, liquidation proche si rien ne change.`,
+        });
+      }
+      businesses.push(resolved.updated);
     }
   }
 
-  // 7. employés : hors périmètre P0 (pas de modèle de headcount), no-op documenté.
-
   // 10. personnage
   let character = allocateTime(state.character, actions.timeAllocation);
-  let cash = character.cash;
-  if (actions.jobHourlyWage !== null) {
-    cash += actions.jobHourlyWage * actions.timeAllocation.emploi;
-  }
   let skills = character.skills;
   for (const category of TIME_CATEGORIES) {
     const hours = actions.timeAllocation[category];
@@ -159,7 +163,7 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
       skills = applySkillGain(skills, gain.skill, hours * gain.ratePerHour);
     }
   }
-  character = { ...character, cash, skills };
+  character = { ...character, cash: availableCharacterCash, skills };
 
   const job = actions.jobHourlyWage !== null ? { hourlyWage: actions.jobHourlyWage } : null;
   if (job && !state.job) {
@@ -167,12 +171,14 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
   }
 
   // 11. événements
-  if (detectMarketInefficiency(market, competition)) {
-    events.push({
-      kind: "market-opportunity-detected",
-      date: nextDate,
-      message: `Opportunité détectée sur le marché ${market.id}.`,
-    });
+  for (const [marketId, market] of Object.entries(markets)) {
+    if (detectMarketInefficiency(market, competitions[marketId]!)) {
+      events.push({
+        kind: "market-opportunity-detected",
+        date: nextDate,
+        message: `Opportunité détectée sur le marché ${marketId}.`,
+      });
+    }
   }
 
   // 12. mémoire
@@ -181,11 +187,11 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
   return {
     date: nextDate,
     macro,
-    market,
-    competition,
+    markets,
+    competitions,
     character,
     job,
-    playerBusiness,
+    businesses,
     events,
     memory,
   };

@@ -29,7 +29,7 @@ const BASE_FILL_RATE = 0.45;
 const REPUTATION_FILL_RATE_BONUS = 0.4;
 const FILL_RATE_NOISE_STD_DEV = 0.05;
 
-function computeHospitalityMonth(
+export function computeHospitalityMonth(
   state: HospitalityEngineState,
   decisions: HospitalityEngineDecisions,
   ctx: EconomicEngineContext,
@@ -62,7 +62,7 @@ function computeHospitalityMonth(
   };
 }
 
-export const HospitalityEngine: EconomicEngine<HospitalityEngineState, HospitalityEngineDecisions> = {
+export const HospitalityEngine: EconomicEngine<HospitalityEngineState, HospitalityEngineDecisions, HospitalityMonthContribution> = {
   family: "hospitality",
   computeMonth: computeHospitalityMonth,
 };

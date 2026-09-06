@@ -49,14 +49,26 @@ export {
 
 export type {
   BusinessState,
+  CreditLineState,
   EconomicContribution,
   EconomicFamily,
   MonthlyFinancialStatement,
   MonthlyFinancialStatementInputs,
+  TreasuryState,
 } from "./types/business.js";
 export { ECONOMIC_FAMILIES } from "./types/business.js";
 export { computeMonthlyFinancials, consolidateContributions } from "./engine/business/accounting.js";
-export { applyCashFlow, createBusiness } from "./engine/business/cash.js";
+export {
+  INSOLVENCY_THRESHOLD_MONTHS,
+  applyMonthlyCashFlow,
+  computeMonthlyInterest,
+  createBusiness,
+  injectCapital,
+  type ApplyCashFlowResult,
+  type CreateBusinessFinancing,
+  type FinancingOutcome,
+  type FinancingOutcomeKind,
+} from "./engine/business/treasury.js";
 
 export type { EconomicEngine, EconomicEngineContext } from "./engine/economic-models/economic-engine.js";
 export {
@@ -74,6 +86,7 @@ export {
 } from "./engine/economic-models/retail.js";
 export {
   HospitalityEngine,
+  computeHospitalityMonth,
   type HospitalityEngineDecisions,
   type HospitalityEngineState,
   type HospitalityMonthContribution,
@@ -86,6 +99,7 @@ export {
 } from "./engine/economic-models/agency.js";
 export {
   SubscriptionEngine,
+  computeSubscriptionMonth,
   type SubscriptionEngineDecisions,
   type SubscriptionEngineState,
   type SubscriptionMonthContribution,
@@ -112,11 +126,15 @@ export type { GameEvent, GameEventKind, MemoryEntry } from "./types/narrative.js
 export { appendToMemory } from "./engine/narrative/narrative.js";
 
 export type {
-  BusinessDecisionsAction,
-  CreateBusinessAction,
+  BusinessAction,
+  BusinessFamilyDecisions,
+  BusinessFamilyState,
+  CreateBusinessSpec,
   GameState,
   MonthActions,
-  PlayerBusinessState,
+  OrchestratedFamily,
+  OwnedBusiness,
 } from "./engine/simulation/types.js";
 export { createInitialGameState } from "./engine/simulation/game.js";
 export { simulateMonth } from "./engine/simulation/simulateMonth.js";
+export { createOwnedBusiness, resolveBusinessMonth, type ResolvedBusinessMonth } from "./engine/simulation/businessResolution.js";

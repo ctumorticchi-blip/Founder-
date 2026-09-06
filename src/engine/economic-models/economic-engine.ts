@@ -13,7 +13,7 @@ export interface EconomicEngineContext {
  * elle ne produit que `revenue`/`variableCosts` (spec §3.9 : les lignes
  * transversales sont ajoutées une seule fois, au niveau du Business Engine).
  */
-export interface EconomicEngine<TState, TDecisions> {
+export interface EconomicEngine<TState, TDecisions, TContribution extends EconomicContribution = EconomicContribution> {
   readonly family: EconomicFamily;
-  computeMonth(state: TState, decisions: TDecisions, ctx: EconomicEngineContext): EconomicContribution;
+  computeMonth(state: TState, decisions: TDecisions, ctx: EconomicEngineContext): TContribution;
 }

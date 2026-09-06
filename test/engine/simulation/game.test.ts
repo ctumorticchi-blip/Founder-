@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createInitialGameState } from "../../../src/engine/simulation/game.js";
 import type { Market } from "../../../src/types/market.js";
 
-const MARKET: Market = {
+const SERVICE_MARKET: Market = {
   id: "nettoyage-local",
   family: "service",
   sizeMonthlyRevenuePotential: 500_000,
@@ -18,22 +18,42 @@ const MARKET: Market = {
   cyclicality: 0.3,
 };
 
+const SUBSCRIPTION_MARKET: Market = {
+  ...SERVICE_MARKET,
+  id: "saas-niche",
+  family: "subscription",
+};
+
 const BIRTH_DATE = { year: 2008, month: 1 };
 const START_DATE = { year: 2026, month: 1 };
 
 describe("createInitialGameState", () => {
   it("démarre conforme à la spec §4.1 : 0 €, aucune entreprise, aucun emploi", () => {
-    const state = createInitialGameState(1, BIRTH_DATE, START_DATE, MARKET);
+    const state = createInitialGameState(1, BIRTH_DATE, START_DATE, [SERVICE_MARKET]);
     expect(state.character.cash).toBe(0);
-    expect(state.playerBusiness).toBeNull();
+    expect(state.businesses).toEqual([]);
     expect(state.job).toBeNull();
     expect(state.events).toEqual([]);
     expect(state.memory).toEqual([]);
   });
 
   it("est déterministe pour une même seed", () => {
-    const a = createInitialGameState(42, BIRTH_DATE, START_DATE, MARKET);
-    const b = createInitialGameState(42, BIRTH_DATE, START_DATE, MARKET);
+    const a = createInitialGameState(42, BIRTH_DATE, START_DATE, [SERVICE_MARKET]);
+    const b = createInitialGameState(42, BIRTH_DATE, START_DATE, [SERVICE_MARKET]);
     expect(a).toEqual(b);
+  });
+
+  it("accepte plusieurs marchés (spec de consolidation §3) et crée une concurrence par marché", () => {
+    const state = createInitialGameState(7, BIRTH_DATE, START_DATE, [SERVICE_MARKET, SUBSCRIPTION_MARKET]);
+    expect(Object.keys(state.markets).sort()).toEqual(["nettoyage-local", "saas-niche"]);
+    expect(Object.keys(state.competitions).sort()).toEqual(["nettoyage-local", "saas-niche"]);
+  });
+
+  it("rejette une liste de marchés vide", () => {
+    expect(() => createInitialGameState(1, BIRTH_DATE, START_DATE, [])).toThrow(RangeError);
+  });
+
+  it("rejette des identifiants de marché dupliqués", () => {
+    expect(() => createInitialGameState(1, BIRTH_DATE, START_DATE, [SERVICE_MARKET, SERVICE_MARKET])).toThrow(RangeError);
   });
 });

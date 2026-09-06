@@ -32,7 +32,7 @@ export interface SubscriptionMonthContribution extends EconomicContribution {
 
 const CHURN_NOISE_STD_DEV = 0.01;
 
-function computeSubscriptionMonth(
+export function computeSubscriptionMonth(
   state: SubscriptionEngineState,
   decisions: SubscriptionEngineDecisions,
   ctx: EconomicEngineContext,
@@ -67,7 +67,7 @@ function computeSubscriptionMonth(
   };
 }
 
-export const SubscriptionEngine: EconomicEngine<SubscriptionEngineState, SubscriptionEngineDecisions> = {
+export const SubscriptionEngine: EconomicEngine<SubscriptionEngineState, SubscriptionEngineDecisions, SubscriptionMonthContribution> = {
   family: "subscription",
   computeMonth: computeSubscriptionMonth,
 };

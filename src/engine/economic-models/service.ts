@@ -64,7 +64,7 @@ export function computeServiceMonth(
   };
 }
 
-export const ServiceEngine: EconomicEngine<ServiceEngineState, ServiceEngineDecisions> = {
+export const ServiceEngine: EconomicEngine<ServiceEngineState, ServiceEngineDecisions, ServiceMonthContribution> = {
   family: "service",
   computeMonth: computeServiceMonth,
 };

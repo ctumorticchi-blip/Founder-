@@ -11,6 +11,7 @@ export type GameEventKind =
   | "business-created"
   | "business-liquidated"
   | "cash-crisis-warning"
+  | "capital-injected"
   | "market-opportunity-detected";
 
 /** Événement du mois courant (transitoire : renvoyé par simulateMonth, pas nécessairement mémorisé). */

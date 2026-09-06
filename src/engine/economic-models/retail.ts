@@ -62,7 +62,7 @@ function computeRetailMonth(
   };
 }
 
-export const RetailEngine: EconomicEngine<RetailEngineState, RetailEngineDecisions> = {
+export const RetailEngine: EconomicEngine<RetailEngineState, RetailEngineDecisions, RetailMonthContribution> = {
   family: "retail",
   computeMonth: computeRetailMonth,
 };

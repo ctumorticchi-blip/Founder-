@@ -74,7 +74,7 @@ function computeAgencyMonth(
   };
 }
 
-export const AgencyEngine: EconomicEngine<AgencyEngineState, AgencyEngineDecisions> = {
+export const AgencyEngine: EconomicEngine<AgencyEngineState, AgencyEngineDecisions, AgencyMonthContribution> = {
   family: "agency",
   computeMonth: computeAgencyMonth,
 };

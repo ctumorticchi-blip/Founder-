@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit false --outDir dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.eslint.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint ."

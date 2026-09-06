@@ -70,15 +70,43 @@ export interface MonthlyFinancialStatement {
 }
 
 /**
- * État minimal d'une entreprise pour le P0. `consecutiveNegativeCashMonths`
- * est le signal précurseur exigé par la spec §3.7 ("pas de catastrophe
- * instantanée sans signal") : une liquidation forcée (introduite dans un
- * milestone ultérieur) devra se déclencher sur ce compteur, jamais sur un
- * seul mois de trésorerie négative.
+ * Ligne de crédit / découvert autorisé (spec : "distinction entre cash
+ * disponible, découvert/ligne de crédit, besoin de financement,
+ * insolvabilité"). `drawn` ne peut jamais dépasser `limit`.
  */
+export interface CreditLineState {
+  readonly limit: number;
+  readonly drawn: number;
+  readonly interestRateAnnual: number;
+}
+
+/**
+ * Trésorerie d'une entreprise. `cash` ne peut jamais être négatif : un
+ * besoin de financement non couvert par le cash disponible est d'abord
+ * absorbé par la ligne de crédit (jusqu'à `creditLine.limit`), jamais par
+ * un solde de cash fictif négatif (spec : "une trésorerie réellement
+ * négative ne doit pas être possible sans mécanisme explicite permettant
+ * de la financer").
+ *
+ * `consecutiveUnmetShortfallMonths` est le signal précurseur exigé par la
+ * spec §3.7 ("pas de catastrophe instantanée sans signal") : il ne compte
+ * que les mois où un besoin de financement est resté non couvert même
+ * après avoir maximisé la ligne de crédit — pas un simple mois de cash-flow
+ * négatif, qui peut parfaitement être absorbé par le cash ou le crédit
+ * disponible sans aucune conséquence. `isInsolvent` devient vrai quand ce
+ * compteur atteint le seuil de liquidation forcée
+ * (voir engine/business/treasury.ts).
+ */
+export interface TreasuryState {
+  readonly cash: number;
+  readonly creditLine: CreditLineState;
+  readonly consecutiveUnmetShortfallMonths: number;
+  readonly isInsolvent: boolean;
+}
+
+/** État minimal d'une entreprise pour le P0. */
 export interface BusinessState {
   readonly name: string;
   readonly families: readonly EconomicFamily[];
-  readonly cash: number;
-  readonly consecutiveNegativeCashMonths: number;
+  readonly treasury: TreasuryState;
 }

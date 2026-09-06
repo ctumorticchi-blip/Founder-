@@ -1,50 +1,112 @@
 import type { GameDate } from "../time/clock.js";
 import type { CharacterState, TimeCategory } from "../../types/character.js";
 import type { BusinessState } from "../../types/business.js";
+import type { WorkforceState } from "../../types/employees.js";
 import type { Market } from "../../types/market.js";
 import type { AggregateCompetition } from "../../types/competition.js";
 import type { MacroState } from "../../types/world.js";
 import type { GameEvent, MemoryEntry } from "../../types/narrative.js";
 
 /**
- * État de l'entreprise du joueur pour la tranche verticale du P0 : une seule
- * entreprise active, famille "service" (spec §7). Composer plusieurs
- * familles ou plusieurs entreprises est déjà supporté par le Business
- * Engine (M2, `consolidateContributions`) mais reste hors périmètre de cet
- * orchestrateur — voir docs/MILESTONES.md (post-P0).
+ * Familles économiques réellement câblées dans l'orchestrateur (spec de
+ * consolidation, §3/§4). Retail et Agency restent des `EconomicEngine`
+ * purs et testés (M3) mais ne sont pas encore branchés ici — voir
+ * docs/MILESTONES.md pour la limite assumée.
  */
-export interface PlayerBusinessState {
+export type OrchestratedFamily = "service" | "hospitality" | "subscription";
+
+/** État persistant propre à chaque famille câblée, en plus de `BusinessState`/`WorkforceState` communs. */
+export type BusinessFamilyState =
+  | { readonly family: "service"; readonly reputationScore: number; readonly costPerLaborHour: number }
+  | { readonly family: "hospitality"; readonly reputationScore: number; readonly foodCostPerCover: number }
+  | {
+      readonly family: "subscription";
+      readonly activeSubscribers: number;
+      readonly arpu: number;
+      readonly churnRateBase: number;
+      readonly cogsRatio: number;
+    };
+
+/** Décisions mensuelles propres à chaque famille (hors budgets transversaux, communs à toutes). */
+export type BusinessFamilyDecisions =
+  | { readonly family: "service"; readonly price: number; readonly targetHours: number }
+  | { readonly family: "hospitality"; readonly averageTicketPrice: number; readonly expectedDemandCovers: number }
+  | { readonly family: "subscription"; readonly newSubscribers: number };
+
+/** Une entreprise possédée par le joueur (spec §3 : plusieurs entreprises et familles possibles). */
+export interface OwnedBusiness {
+  readonly id: string;
   readonly business: BusinessState;
-  readonly reputationScore: number;
-  readonly costPerLaborHour: number;
+  readonly workforce: WorkforceState;
+  readonly marketId: string;
+  readonly familyState: BusinessFamilyState;
+}
+
+export type CreateBusinessSpec =
+  | {
+      readonly family: "service";
+      readonly marketId: string;
+      readonly costPerLaborHour: number;
+      readonly averageMonthlySalary: number;
+      readonly creditLineLimit: number;
+      readonly creditLineInterestRateAnnual: number;
+    }
+  | {
+      readonly family: "hospitality";
+      readonly marketId: string;
+      readonly foodCostPerCover: number;
+      readonly averageMonthlySalary: number;
+      readonly creditLineLimit: number;
+      readonly creditLineInterestRateAnnual: number;
+    }
+  | {
+      readonly family: "subscription";
+      readonly marketId: string;
+      readonly arpu: number;
+      readonly churnRateBase: number;
+      readonly cogsRatio: number;
+      readonly initialActiveSubscribers: number;
+      readonly averageMonthlySalary: number;
+      readonly creditLineLimit: number;
+      readonly creditLineInterestRateAnnual: number;
+    };
+
+/**
+ * Action du joueur pour une entreprise donnée, ce mois-ci. `simulateMonth`
+ * exige explicitement une `BusinessAction` pour chaque entreprise non
+ * liquidée du portefeuille (jamais de no-op silencieux — spec §4.3).
+ */
+export interface BusinessAction {
+  readonly businessId: string;
+  /** Part des heures "business" du fondateur allouées à CETTE entreprise ce mois-ci. */
+  readonly founderHoursAllocated: number;
+  /** Fourni uniquement le mois de création de cette entreprise. */
+  readonly create?: CreateBusinessSpec;
+  /** Requis chaque mois où l'entreprise est active (création comprise). */
+  readonly decisions?: BusinessFamilyDecisions;
+  readonly marketingBudget: number;
+  readonly rentBudget: number;
+  readonly adminBudget: number;
+  /** Effectif cible ce mois-ci (recrutement/licenciement vers cette cible). Omis = effectif inchangé. */
+  readonly targetHeadcount?: number;
+  /** Apport de capital personnel dans cette entreprise ce mois-ci (spec : "sauvé par apport"). */
+  readonly capitalInjection?: number;
 }
 
 /** État complet du monde simulé (Truth) à une date donnée. */
 export interface GameState {
   readonly date: GameDate;
   readonly macro: MacroState;
-  readonly market: Market;
-  readonly competition: AggregateCompetition;
+  readonly markets: Readonly<Record<string, Market>>;
+  readonly competitions: Readonly<Record<string, AggregateCompetition>>;
   readonly character: CharacterState;
   readonly job: { readonly hourlyWage: number } | null;
-  readonly playerBusiness: PlayerBusinessState | null;
+  /** Portefeuille d'entreprises du joueur (spec §3 : plus limité à une seule). */
+  readonly businesses: readonly OwnedBusiness[];
   /** Événements du dernier mois résolu uniquement (vue transitoire). */
   readonly events: readonly GameEvent[];
   /** Mémoire longue cumulée sur toute la partie (spec §18). */
   readonly memory: readonly MemoryEntry[];
-}
-
-export interface CreateBusinessAction {
-  readonly costPerLaborHour: number;
-}
-
-export interface BusinessDecisionsAction {
-  readonly price: number;
-  readonly targetHours: number;
-  readonly marketingBudget: number;
-  readonly rentBudget: number;
-  readonly adminBudget: number;
-  readonly payrollBudget: number;
 }
 
 /**
@@ -55,8 +117,5 @@ export interface MonthActions {
   readonly timeAllocation: Readonly<Record<TimeCategory, number>>;
   /** `null` = pas d'emploi ce mois-ci. */
   readonly jobHourlyWage: number | null;
-  /** Fourni uniquement le mois où le joueur crée son entreprise. */
-  readonly createBusiness?: CreateBusinessAction;
-  /** Requis chaque mois où une entreprise est active. */
-  readonly businessDecisions?: BusinessDecisionsAction;
+  readonly businessActions: readonly BusinessAction[];
 }
