@@ -78,3 +78,20 @@ export {
   type SubscriptionEngineState,
   type SubscriptionMonthContribution,
 } from "./engine/economic-models/subscription.js";
+
+export type { MacroCyclePhase, MacroState } from "./types/world.js";
+export { MACRO_CYCLE_PHASES } from "./types/world.js";
+export { advanceMacro, createInitialMacroState } from "./engine/world/world.js";
+
+export type { Market, MarketInefficiency } from "./types/market.js";
+export { advanceMarket, detectMarketInefficiency } from "./engine/market/market.js";
+
+export type { AggregateCompetition, Competitor, CompetitorTier } from "./types/competition.js";
+export {
+  advanceAggregateCompetition,
+  availableDemandShare,
+  createAggregateCompetition,
+} from "./engine/competition/competition.js";
+
+export type { Estimate, MarketEstimate } from "./types/intelligence.js";
+export { type IntelligenceSkills, projectMarketView } from "./engine/intelligence/intelligence.js";
