@@ -196,3 +196,39 @@ GameState' --[projectToPlayerView(state', character.skills)]--> PlayerView
 - Une UI future consomme `PlayerView` + envoie des `PlayerAction[]` ; elle
   peut être ajoutée comme package séparé (`apps/web`) sans modifier le
   moteur.
+
+## 9. Application web (M10)
+
+- `web/` est un package Vite + React + TypeScript **séparé** du moteur
+  (son propre `package.json`, `node_modules`, `tsconfig.json`,
+  `eslint.config.js`, suite de tests) — pas de monorepo/workspaces npm pour
+  garder le moteur inchangé et à faible risque. `web/src` importe le moteur
+  directement en TypeScript source via l'alias `@founder/engine` ->
+  `../src/index.ts` (et `@founder/scenarios/*` -> `../src/scenarios/*` pour
+  réutiliser les marchés déjà validés par les vertical slices). Vite/esbuild
+  transpile ces fichiers comme les siens ; aucune étape de build du moteur
+  n'est nécessaire avant de lancer le front.
+- **L'UI ne calcule rien** (spec) : `web/src/state/GameProvider.tsx` ne fait
+  qu'appeler `createInitialGameState`/`simulateMonth` et stocke le
+  `GameState` retourné tel quel. Toute grandeur affichée (CA, résultat,
+  trésorerie, compétences...) vient directement d'un champ du `GameState`
+  ou d'un appel à une fonction exportée du moteur (ex. `detectMarketInefficiency`
+  pour les alertes d'opportunité sur le tableau de bord).
+- **Brouillon de mois** (`web/src/state/draft.ts`) : le joueur construit ses
+  décisions écran par écran dans un `MonthDraft` ; `simulateMonth` n'est
+  appelé qu'au clic sur "Terminer le mois", avec un `MonthActions` assemblé
+  à partir de ce brouillon. Après résolution, `deriveNextDraft` reconduit
+  les décisions pour le mois suivant (et vide l'entreprise du brouillon si
+  elle a été liquidée).
+- **Portée du M10** : au plus une entreprise active à la fois côté UI (le
+  moteur supporte déjà le multi-entreprise, non encore exposé à l'écran).
+  Retail et Agency sont sélectionnables comme les 3 autres familles.
+- **Persistance locale** : `web/src/lib/storage.ts` sérialise
+  `{ seed, birthDate, startDate, gameState, draft, lastRecap }` dans
+  `localStorage` à chaque changement d'état ; un rechargement de page
+  restaure la partie exacte, seed comprise (spec : "le seed de la partie
+  doit être conservé").
+- **Déploiement Vercel** : `vercel.json` à la racine du dépôt pointe
+  `buildCommand`/`outputDirectory` vers `web/` pour que l'import du dépôt
+  fonctionne sans configuration manuelle du "Root Directory" dans le
+  dashboard Vercel.

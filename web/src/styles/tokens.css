@@ -1,0 +1,60 @@
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bg: #0a0e14;
+  --bg-elevated: #10151f;
+  --surface: #141b28;
+  --surface-hover: #1a2332;
+  --surface-raised: #1c2536;
+  --border: #232d40;
+  --border-soft: #1a2233;
+
+  /* Texte */
+  --text-primary: #f4f6fb;
+  --text-secondary: #9aa7bd;
+  --text-tertiary: #647089;
+  --text-inverse: #06090f;
+
+  /* Accent — vert émeraude "croissance" */
+  --accent: #2fd47a;
+  --accent-strong: #1fb867;
+  --accent-soft: rgba(47, 212, 122, 0.14);
+  --accent-text: #58e895;
+
+  /* Statuts */
+  --danger: #ff5c72;
+  --danger-soft: rgba(255, 92, 114, 0.14);
+  --warning: #ffb648;
+  --warning-soft: rgba(255, 182, 72, 0.14);
+  --info: #5aa9ff;
+  --info-soft: rgba(90, 169, 255, 0.14);
+
+  /* Typo */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "Cascadia Code", monospace;
+
+  /* Échelle */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  --nav-height: 64px;
+}
