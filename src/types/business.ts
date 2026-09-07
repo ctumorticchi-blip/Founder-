@@ -1,3 +1,5 @@
+import type { OwnedProperty } from "./realEstate.js";
+
 /**
  * Familles économiques actives en P0 (spec §7). Une entreprise peut combiner
  * plusieurs familles (spec §3.8, composabilité) ; en P0 la plupart des
@@ -115,4 +117,6 @@ export interface BusinessState {
   readonly name: string;
   readonly families: readonly EconomicFamily[];
   readonly treasury: TreasuryState;
+  /** Biens immobiliers professionnels possédés (spec M11.1.5 §4.2). Vide par défaut. */
+  readonly properties: readonly OwnedProperty[];
 }

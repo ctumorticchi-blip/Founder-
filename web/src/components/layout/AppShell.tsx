@@ -7,6 +7,7 @@ import { CareerScreen } from "../../screens/CareerScreen";
 import { SkillsScreen } from "../../screens/SkillsScreen";
 import { OpportunitiesScreen } from "../../screens/OpportunitiesScreen";
 import { CreateBusinessScreen } from "../../screens/CreateBusinessScreen";
+import { PortfolioScreen } from "../../screens/PortfolioScreen";
 import { BusinessScreen } from "../../screens/BusinessScreen";
 import { WorkforceScreen } from "../../screens/WorkforceScreen";
 import { FinancesScreen } from "../../screens/FinancesScreen";
@@ -49,12 +50,14 @@ function Screen({ route }: { readonly route: Route }) {
       return <OpportunitiesScreen />;
     case "createBusiness":
       return <CreateBusinessScreen family={route.family} />;
+    case "portfolio":
+      return <PortfolioScreen />;
     case "business":
-      return <BusinessScreen />;
+      return <BusinessScreen businessId={route.businessId} />;
     case "workforce":
-      return <WorkforceScreen />;
+      return <WorkforceScreen businessId={route.businessId} />;
     case "finances":
-      return <FinancesScreen />;
+      return <FinancesScreen businessId={route.businessId} />;
     case "news":
       return <NewsScreen />;
     default:

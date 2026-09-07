@@ -73,7 +73,14 @@ export function DashboardScreen() {
         </div>
       </div>
 
-      <div className="card card--interactive" onClick={() => navigate({ screen: "business" })}>
+      <div
+        className="card card--interactive"
+        onClick={() => {
+          if (gameState.businesses.length > 1) navigate({ screen: "portfolio" });
+          else if (business) navigate({ screen: "business", businessId: business.id });
+          else navigate({ screen: "opportunities" });
+        }}
+      >
         <div className="section-title">Entreprise</div>
         {business ? (
           <div className="stack stack--tight">

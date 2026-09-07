@@ -41,6 +41,8 @@ export interface Opportunity {
   readonly recommendedDecisions: BusinessFamilyDecisions;
   readonly recommendedHeadcount: number;
   readonly recommendedMarketingBudget: number;
+  /** Heures de prospection par défaut (spec M11.1.5 §7) : calibrées pour retrouver la cible de `recommendedDecisions` via `commercialTranslation.ts`. */
+  readonly recommendedProspectionHours: number;
   readonly recommendedInfrastructureId: string;
   readonly recommendedAdminOptionalIds: readonly string[];
   readonly recommendedPurchases: readonly Purchase[];
@@ -67,6 +69,7 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     recommendedDecisions: { family: "service", price: 45, targetHours: 400 },
     recommendedHeadcount: 0,
     recommendedMarketingBudget: 300,
+    recommendedProspectionHours: 40,
     recommendedInfrastructureId: "domicile",
     recommendedAdminOptionalIds: [],
     recommendedPurchases: [],
@@ -91,6 +94,7 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     recommendedDecisions: { family: "hospitality", averageTicketPrice: 26, expectedDemandCovers: 1_500 },
     recommendedHeadcount: 3,
     recommendedMarketingBudget: 300,
+    recommendedProspectionHours: 40,
     recommendedInfrastructureId: "petit-bureau",
     recommendedAdminOptionalIds: ["conformite"],
     recommendedPurchases: [{ itemId: "materiel-pro", quantity: 1 }, { itemId: "amenagement", quantity: 1 }],
@@ -118,6 +122,7 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     recommendedDecisions: { family: "subscription", newSubscribers: 40 },
     recommendedHeadcount: 0,
     recommendedMarketingBudget: 500,
+    recommendedProspectionHours: 40,
     recommendedInfrastructureId: "domicile",
     recommendedAdminOptionalIds: ["logiciels"],
     recommendedPurchases: [{ itemId: "ordinateur", quantity: 1 }],
@@ -139,9 +144,11 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
       creditLineLimit: 20_000,
       creditLineInterestRateAnnual: 0.08,
     },
-    recommendedDecisions: { family: "retail", unitPrice: 15, stockUnits: 600, expectedFootTraffic: 2_500 },
+    // stockUnits <= 200 : capacité de stockage du "petit-bureau" recommandé ci-dessous (spec M11.1.5 §3.1).
+    recommendedDecisions: { family: "retail", unitPrice: 15, stockUnits: 150, expectedFootTraffic: 2_500 },
     recommendedHeadcount: 0,
     recommendedMarketingBudget: 200,
+    recommendedProspectionHours: 40,
     recommendedInfrastructureId: "petit-bureau",
     recommendedAdminOptionalIds: [],
     recommendedPurchases: [{ itemId: "mobilier", quantity: 1 }],
@@ -167,6 +174,7 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     recommendedDecisions: { family: "agency", targetMandates: 20 },
     recommendedHeadcount: 0,
     recommendedMarketingBudget: 300,
+    recommendedProspectionHours: 40,
     recommendedInfrastructureId: "coworking",
     recommendedAdminOptionalIds: [],
     recommendedPurchases: [{ itemId: "ordinateur", quantity: 1 }],

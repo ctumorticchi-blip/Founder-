@@ -30,6 +30,9 @@ describe("multi-entreprises", () => {
         {
           businessId: "svc",
           founderHoursAllocated: 50,
+          founderProspectionHoursAllocated: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           create: {
             family: "service",
             name: "Svc",
@@ -47,6 +50,9 @@ describe("multi-entreprises", () => {
         {
           businessId: "resto",
           founderHoursAllocated: 50,
+          founderProspectionHoursAllocated: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           create: {
             family: "hospitality",
             name: "Resto",
@@ -66,6 +72,9 @@ describe("multi-entreprises", () => {
         {
           businessId: "saas",
           founderHoursAllocated: 50,
+          founderProspectionHoursAllocated: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           create: {
             family: "subscription",
             name: "Saas",
@@ -108,6 +117,9 @@ describe("multi-entreprises", () => {
     const healthyAction = (businessId: string, isCreation: boolean) => ({
       businessId,
       founderHoursAllocated: 75,
+      founderProspectionHoursAllocated: 0,
+      headcountCapacity: Number.POSITIVE_INFINITY,
+      storageCapacity: Number.POSITIVE_INFINITY,
       ...(isCreation
         ? {
             create: {
@@ -130,6 +142,9 @@ describe("multi-entreprises", () => {
     const ruinousAction = (businessId: string, isCreation: boolean) => ({
       businessId,
       founderHoursAllocated: 75,
+      founderProspectionHoursAllocated: 0,
+      headcountCapacity: Number.POSITIVE_INFINITY,
+      storageCapacity: Number.POSITIVE_INFINITY,
       ...(isCreation
         ? {
             create: {
@@ -190,6 +205,9 @@ describe("multi-entreprises", () => {
         {
           businessId: "svc",
           founderHoursAllocated: 30,
+          founderProspectionHoursAllocated: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           create: {
             family: "service",
             name: "Svc",
@@ -207,6 +225,9 @@ describe("multi-entreprises", () => {
         {
           businessId: "resto",
           founderHoursAllocated: 30,
+          founderProspectionHoursAllocated: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           create: {
             family: "hospitality",
             name: "Resto",
@@ -225,6 +246,9 @@ describe("multi-entreprises", () => {
         {
           businessId: "saas",
           founderHoursAllocated: 30,
+          founderProspectionHoursAllocated: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           create: {
             family: "subscription",
             name: "Saas",
@@ -245,6 +269,9 @@ describe("multi-entreprises", () => {
         {
           businessId: "fleur",
           founderHoursAllocated: 30,
+          founderProspectionHoursAllocated: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           create: {
             family: "retail",
             name: "Fleur",
@@ -262,6 +289,9 @@ describe("multi-entreprises", () => {
         {
           businessId: "conseil",
           founderHoursAllocated: 30,
+          founderProspectionHoursAllocated: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           create: {
             family: "agency",
             name: "Conseil",

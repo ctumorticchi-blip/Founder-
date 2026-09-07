@@ -14,7 +14,6 @@ describe("Identité d'entreprise (spec M11.1)", () => {
     await user.click(screen.getByRole("button", { name: /commencer ma vie/i }));
 
     await user.click(screen.getByRole("button", { name: /entreprise/i }));
-    await user.click(await screen.findByRole("button", { name: /explorer les opportunités/i }));
     await user.click(await screen.findByText(/société de nettoyage/i));
 
     const nameInput = await screen.findByLabelText(/nom commercial/i);
@@ -26,7 +25,7 @@ describe("Identité d'entreprise (spec M11.1)", () => {
     expect(await screen.findByRole("heading", { name: /nettoyage étincelant/i })).toBeInTheDocument();
 
     const save = loadSave()!;
-    const businessId = save.draft.business!.businessId;
+    const businessId = save.draft.businesses[0]!.businessId;
     expect(save.businessIdentities[businessId]!.displayName).toBe("Nettoyage Étincelant");
 
     // Invariant I1 : l'id technique généré ne doit jamais apparaître dans le DOM rendu.
@@ -49,7 +48,6 @@ describe("Identité d'entreprise (spec M11.1)", () => {
     renderApp();
     await user.click(screen.getByRole("button", { name: /commencer ma vie/i }));
     await user.click(screen.getByRole("button", { name: /entreprise/i }));
-    await user.click(await screen.findByRole("button", { name: /explorer les opportunités/i }));
     await user.click(await screen.findByText(/société de nettoyage/i));
 
     await user.click(await screen.findByText(/^coworking$/i));
@@ -120,6 +118,6 @@ describe("Identité d'entreprise (spec M11.1)", () => {
 
     const migrated = loadSave() as SaveGameV1;
     expect(migrated.businessIdentities["service-legacy01"]).toBeDefined();
-    expect(migrated.draft.business!.infrastructureId).toBeDefined();
+    expect(migrated.draft.businesses[0]!.infrastructureId).toBeDefined();
   });
 });

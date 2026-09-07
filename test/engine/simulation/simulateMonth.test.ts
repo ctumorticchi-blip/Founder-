@@ -34,6 +34,7 @@ function createServiceAction(overrides: Partial<BusinessAction> = {}): BusinessA
   return {
     businessId: "clean-co",
     founderHoursAllocated: 140,
+    founderProspectionHoursAllocated: 0,
     create: {
       family: "service",
       name: "Clean Co",
@@ -47,6 +48,8 @@ function createServiceAction(overrides: Partial<BusinessAction> = {}): BusinessA
     marketingBudget: 100,
     rentBudget: 200,
     adminBudget: 50,
+    headcountCapacity: Number.POSITIVE_INFINITY,
+    storageCapacity: Number.POSITIVE_INFINITY,
     ...overrides,
   };
 }
@@ -134,6 +137,7 @@ describe("simulateMonth", () => {
         {
           businessId: "clean-co",
           founderHoursAllocated: 140,
+          founderProspectionHoursAllocated: 0,
           create: {
             family: "service",
             name: "Clean Co",
@@ -146,6 +150,8 @@ describe("simulateMonth", () => {
           marketingBudget: 0,
           rentBudget: 0,
           adminBudget: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
         },
       ],
     };
@@ -172,10 +178,13 @@ describe("simulateMonth", () => {
         {
           businessId: "clean-co",
           founderHoursAllocated: 0,
+          founderProspectionHoursAllocated: 0,
           decisions: { family: "service", price: 30, targetHours: 100 },
           marketingBudget: 0,
           rentBudget: 0,
           adminBudget: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
         },
       ],
     };
@@ -245,10 +254,13 @@ describe("simulateMonth", () => {
         {
           businessId: "clean-co",
           founderHoursAllocated: 140,
+          founderProspectionHoursAllocated: 0,
           decisions: { family: "service", price: 1, targetHours: 10 },
           marketingBudget: 5_000,
           rentBudget: 5_000,
           adminBudget: 5_000,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
         },
       ],
     };

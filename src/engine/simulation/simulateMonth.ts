@@ -6,11 +6,14 @@ import { advanceAggregateCompetition, availableDemandShare } from "../competitio
 import { allocateTime, applySkillGain } from "../character/character.js";
 import { TIME_CATEGORIES, type SkillName, type TimeCategory } from "../../types/character.js";
 import { INSOLVENCY_THRESHOLD_MONTHS } from "../business/treasury.js";
+import { advanceSaleProcess, closeSale, resolveSaleDecision, startSaleProcess } from "../business/sale.js";
+import { computeValuation } from "../business/valuation.js";
 import { appendToMemory } from "../narrative/narrative.js";
 import { createOwnedBusiness, resolveBusinessMonth } from "./businessResolution.js";
 import type { GameEvent } from "../../types/narrative.js";
 import type { Market } from "../../types/market.js";
 import type { AggregateCompetition } from "../../types/competition.js";
+import type { SaleProcessState } from "../../types/sale.js";
 import type { GameState, MonthActions, OwnedBusiness } from "./types.js";
 
 /**
@@ -49,6 +52,20 @@ function validateActions(state: GameState, actions: MonthActions): void {
     if (action.capitalInjection !== undefined && action.capitalInjection < 0) {
       throw new RangeError(`simulateMonth: capitalInjection négatif pour businessId="${action.businessId}".`);
     }
+
+    // Contrainte de capacité physique (spec M11.1.5 §3.2) : rejet explicite,
+    // jamais un simple avertissement UI ni un clamp silencieux.
+    if (action.targetHeadcount !== undefined && action.targetHeadcount > action.headcountCapacity) {
+      const current = existing?.workforce.headcount ?? 0;
+      throw new RangeError(
+        `simulateMonth: businessId="${action.businessId}" — capacité atteinte (${current}/${action.headcountCapacity} postes utilisés). Agrandissez vos locaux avant de recruter.`,
+      );
+    }
+    if (action.decisions.family === "retail" && action.decisions.stockUnits > action.storageCapacity) {
+      throw new RangeError(
+        `simulateMonth: businessId="${action.businessId}" — stock demandé (${action.decisions.stockUnits}) dépasse la capacité de stockage de vos locaux (${action.storageCapacity}). Agrandissez vos locaux avant d'augmenter le stock.`,
+      );
+    }
   }
 
   for (const owned of state.businesses) {
@@ -57,10 +74,16 @@ function validateActions(state: GameState, actions: MonthActions): void {
     }
   }
 
-  const totalFounderHours = actions.businessActions.reduce((sum, action) => sum + action.founderHoursAllocated, 0);
+  // Budget de temps fondateur partagé (spec M11.1.5 §5.3, §7.2) : production
+  // ET prospection de TOUTES les entreprises comptent contre le même budget
+  // global — jamais un levier gratuit, jamais un dédoublement de temps.
+  const totalFounderHours = actions.businessActions.reduce(
+    (sum, action) => sum + action.founderHoursAllocated + action.founderProspectionHoursAllocated,
+    0,
+  );
   if (totalFounderHours > actions.timeAllocation.business) {
     throw new RangeError(
-      `simulateMonth: la somme des heures fondateur allouées aux entreprises (${totalFounderHours}h) dépasse le temps "business" alloué (${actions.timeAllocation.business}h).`,
+      `simulateMonth: la somme des heures fondateur allouées aux entreprises (${totalFounderHours}h, production + prospection) dépasse le temps "business" alloué (${actions.timeAllocation.business}h).`,
     );
   }
 }
@@ -124,6 +147,15 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
       });
     }
 
+    if (action.propertyPurchase && action.propertyPurchase.downPaymentFromPersonalCash > availableCharacterCash) {
+      throw new RangeError(
+        `simulateMonth: apport immobilier de ${action.propertyPurchase.downPaymentFromPersonalCash} dans "${owned.business.name}" dépasse le cash personnel disponible (${availableCharacterCash}).`,
+      );
+    }
+    if (action.propertyPurchase) {
+      availableCharacterCash -= action.propertyPurchase.downPaymentFromPersonalCash;
+    }
+
     const demandShare = availableDemandShare(competitions[owned.marketId]!);
     const resolved = resolveBusinessMonth(owned, action, demandShare, state.character.skills.leadership, rng);
 
@@ -135,7 +167,69 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
       });
     }
 
-    if (resolved.updated.business.treasury.isInsolvent) {
+    if (action.propertyPurchase) {
+      events.push({
+        kind: "property-purchased",
+        date: nextDate,
+        message: `"${resolved.updated.business.name}" a acheté un bien immobilier pour ${Math.round(action.propertyPurchase.purchasePrice)} €.`,
+      });
+    }
+
+    if (action.note) {
+      events.push({ kind: "business-note", date: nextDate, message: action.note });
+    }
+
+    // Cession (spec M11.1.5 §6.2) : avance le processus en cours et/ou
+    // applique la décision du joueur, avant de statuer sur la sortie
+    // (vendue) ou le maintien de l'entreprise dans le portefeuille.
+    let saleProcess: SaleProcessState | null = owned.saleProcess;
+    let saleDecisionResolvedThisMonth = false;
+    if (action.saleDecision) {
+      if (action.saleDecision.action === "list") {
+        if (saleProcess === null) {
+          saleProcess = startSaleProcess();
+          events.push({
+            kind: "business-listed-for-sale",
+            date: nextDate,
+            message: `"${resolved.updated.business.name}" est mise en vente.`,
+          });
+        }
+      } else if (saleProcess !== null) {
+        saleProcess = resolveSaleDecision(saleProcess, action.saleDecision);
+        // Une décision (accept/reject/counter/withdraw) tranchée ce mois-ci
+        // n'est jamais immédiatement suivie d'un nouveau tirage le même
+        // mois : refuser une offre, par exemple, ne fait pas apparaître un
+        // nouvel acheteur instantanément.
+        saleDecisionResolvedThisMonth = true;
+      }
+    }
+    if (!saleDecisionResolvedThisMonth && saleProcess !== null && saleProcess.status === "listed") {
+      const valuation = computeValuation(resolved.updated.business, resolved.statement, resolved.updated.workforce);
+      const beforeAdvance = saleProcess;
+      saleProcess = advanceSaleProcess(saleProcess, valuation, rng.fork(`business:${owned.id}:sale`));
+      if (beforeAdvance.status === "listed" && saleProcess.status === "offer-pending" && saleProcess.currentOffer) {
+        events.push({
+          kind: "sale-offer-received",
+          date: nextDate,
+          message: `Une offre de ${Math.round(saleProcess.currentOffer.amount)} € a été reçue pour "${resolved.updated.business.name}".`,
+        });
+      }
+    }
+
+    if (saleProcess !== null && saleProcess.status === "closed" && saleProcess.currentOffer) {
+      const outstandingDebt =
+        resolved.updated.business.treasury.creditLine.drawn +
+        resolved.updated.business.treasury.unpaidObligations +
+        resolved.updated.business.properties.reduce((sum, property) => sum + (property.mortgage?.principalRemaining ?? 0), 0);
+      const closing = closeSale(saleProcess.currentOffer.amount, outstandingDebt);
+      availableCharacterCash += closing.netProceeds;
+      events.push({
+        kind: "business-sold",
+        date: nextDate,
+        message: `"${resolved.updated.business.name}" vendue pour ${Math.round(closing.grossAmount)} € (produit net : ${Math.round(closing.netProceeds)} €).`,
+      });
+      // Vendue : ne rejoint pas `businesses`, sort définitivement du portefeuille.
+    } else if (resolved.updated.business.treasury.isInsolvent) {
       events.push({
         kind: "business-liquidated",
         date: nextDate,
@@ -149,7 +243,8 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
           message: `"${resolved.updated.business.name}" : obligations impayées depuis plusieurs mois (solde dû : ${Math.round(resolved.updated.business.treasury.unpaidObligations)}), liquidation proche si rien ne change.`,
         });
       }
-      businesses.push(resolved.updated);
+      const finalSaleProcess = saleProcess?.status === "withdrawn" ? null : saleProcess;
+      businesses.push({ ...resolved.updated, saleProcess: finalSaleProcess });
     }
   }
 

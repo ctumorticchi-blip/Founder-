@@ -6,9 +6,11 @@ export type Route =
   | { readonly screen: "skills" }
   | { readonly screen: "opportunities" }
   | { readonly screen: "createBusiness"; readonly family: string }
-  | { readonly screen: "business" }
-  | { readonly screen: "workforce" }
-  | { readonly screen: "finances" }
+  /** Portefeuille (spec M11.1.5 §5.2) : hub listant toutes les entreprises. */
+  | { readonly screen: "portfolio" }
+  | { readonly screen: "business"; readonly businessId: string }
+  | { readonly screen: "workforce"; readonly businessId: string }
+  | { readonly screen: "finances"; readonly businessId?: string }
   | { readonly screen: "news" };
 
 interface NavigationValue {

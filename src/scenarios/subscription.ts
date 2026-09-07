@@ -44,6 +44,9 @@ export function buildSubscriptionScenarioActions(monthIndex: number, state: Game
   const businessAction: BusinessAction = {
     businessId: SUBSCRIPTION_BUSINESS_ID,
     founderHoursAllocated: 120,
+    founderProspectionHoursAllocated: 0,
+    headcountCapacity: Number.POSITIVE_INFINITY,
+    storageCapacity: Number.POSITIVE_INFINITY,
     ...(isCreationMonth
       ? {
           create: {

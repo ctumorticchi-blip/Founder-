@@ -54,6 +54,9 @@ export function buildHospitalityScenarioActions(monthIndex: number, state: GameS
   const businessAction: BusinessAction = {
     businessId: HOSPITALITY_BUSINESS_ID,
     founderHoursAllocated: founderHours,
+    founderProspectionHoursAllocated: 0,
+    headcountCapacity: Number.POSITIVE_INFINITY,
+    storageCapacity: Number.POSITIVE_INFINITY,
     ...(isCreationMonth
       ? {
           create: {

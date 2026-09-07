@@ -25,6 +25,7 @@ describe("impossibilité de dépenses sans source de financement", () => {
         {
           businessId: "svc",
           founderHoursAllocated: 150,
+          founderProspectionHoursAllocated: 0,
           create: {
             family: "service",
             name: "Svc",
@@ -38,6 +39,8 @@ describe("impossibilité de dépenses sans source de financement", () => {
           marketingBudget: 0,
           rentBudget: 0,
           adminBudget: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           capitalInjection: 100_000, // le personnage a 0 € en poche
         },
       ],
@@ -55,6 +58,7 @@ describe("impossibilité de dépenses sans source de financement", () => {
         {
           businessId: "svc",
           founderHoursAllocated: 50,
+          founderProspectionHoursAllocated: 0,
           create: {
             family: "service",
             name: "Svc",
@@ -68,6 +72,8 @@ describe("impossibilité de dépenses sans source de financement", () => {
           marketingBudget: 0,
           rentBudget: 0,
           adminBudget: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           capitalInjection: 2_000, // exactement le salaire gagné ce mois-ci
         },
       ],
@@ -95,6 +101,7 @@ describe("impossibilité de dépenses sans source de financement", () => {
         {
           businessId: "svc-a",
           founderHoursAllocated: 75,
+          founderProspectionHoursAllocated: 0,
           create: {
             family: "service",
             name: "Svc A",
@@ -108,11 +115,14 @@ describe("impossibilité de dépenses sans source de financement", () => {
           marketingBudget: 0,
           rentBudget: 0,
           adminBudget: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           capitalInjection: 600,
         },
         {
           businessId: "svc-b",
           founderHoursAllocated: 75,
+          founderProspectionHoursAllocated: 0,
           create: {
             family: "service",
             name: "Svc B",
@@ -126,6 +136,8 @@ describe("impossibilité de dépenses sans source de financement", () => {
           marketingBudget: 0,
           rentBudget: 0,
           adminBudget: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
           capitalInjection: 600, // 600 + 600 > 1000 disponibles
         },
       ],

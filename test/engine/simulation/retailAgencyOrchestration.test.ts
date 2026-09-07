@@ -21,6 +21,7 @@ function retailCreationActions(founderHours: number): MonthActions {
       {
         businessId: "fleur-co",
         founderHoursAllocated: founderHours,
+        founderProspectionHoursAllocated: 0,
         create: {
           family: "retail",
           name: "Fleur Co",
@@ -34,6 +35,8 @@ function retailCreationActions(founderHours: number): MonthActions {
         marketingBudget: 200,
         rentBudget: 500,
         adminBudget: 100,
+        headcountCapacity: Number.POSITIVE_INFINITY,
+        storageCapacity: Number.POSITIVE_INFINITY,
       },
     ],
   };
@@ -47,10 +50,13 @@ function retailContinuationActions(founderHours: number, targetHeadcount?: numbe
       {
         businessId: "fleur-co",
         founderHoursAllocated: founderHours,
+        founderProspectionHoursAllocated: 0,
         decisions: { family: "retail", unitPrice: 15, stockUnits: 2_000, expectedFootTraffic: 5_000 },
         marketingBudget: 200,
         rentBudget: 500,
         adminBudget: 100,
+        headcountCapacity: Number.POSITIVE_INFINITY,
+        storageCapacity: Number.POSITIVE_INFINITY,
         ...(targetHeadcount !== undefined ? { targetHeadcount } : {}),
       },
     ],
@@ -71,6 +77,7 @@ function agencyCreationActions(founderHours: number): MonthActions {
       {
         businessId: "conseil-co",
         founderHoursAllocated: founderHours,
+        founderProspectionHoursAllocated: 0,
         create: {
           family: "agency",
           name: "Conseil Co",
@@ -85,6 +92,8 @@ function agencyCreationActions(founderHours: number): MonthActions {
         marketingBudget: 300,
         rentBudget: 400,
         adminBudget: 150,
+        headcountCapacity: Number.POSITIVE_INFINITY,
+        storageCapacity: Number.POSITIVE_INFINITY,
       },
     ],
   };
@@ -98,10 +107,13 @@ function agencyContinuationActions(founderHours: number, targetHeadcount?: numbe
       {
         businessId: "conseil-co",
         founderHoursAllocated: founderHours,
+        founderProspectionHoursAllocated: 0,
         decisions: { family: "agency", targetMandates: HIGH_TARGET_MANDATES },
         marketingBudget: 300,
         rentBudget: 400,
         adminBudget: 150,
+        headcountCapacity: Number.POSITIVE_INFINITY,
+        storageCapacity: Number.POSITIVE_INFINITY,
         ...(targetHeadcount !== undefined ? { targetHeadcount } : {}),
       },
     ],

@@ -1,37 +1,35 @@
 import { useGame } from "../../state/GameProvider";
-import { useNavigation, type Route } from "../../state/Navigation";
-
-const TABS: ReadonlyArray<{ readonly screen: Route["screen"]; readonly label: string; readonly icon: string }> = [
-  { screen: "dashboard", label: "Accueil", icon: "🏠" },
-  { screen: "career", label: "Carrière", icon: "💼" },
-  { screen: "skills", label: "Talents", icon: "🎯" },
-  { screen: "business", label: "Entreprise", icon: "🏢" },
-  { screen: "finances", label: "Finances", icon: "📊" },
-];
+import { useNavigation } from "../../state/Navigation";
 
 export function BottomNav() {
   const { route, navigate } = useNavigation();
-  const { endMonth } = useGame();
+  const { state, endMonth } = useGame();
+  const businesses = state.draft.businesses;
+
+  // Progressive disclosure (spec M11.1.5 §G) : une seule entreprise -> accès
+  // direct à sa fiche, plusieurs -> portefeuille, aucune -> opportunités.
+  const goToBusiness = () => {
+    if (businesses.length === 0) navigate({ screen: "opportunities" });
+    else if (businesses.length === 1) navigate({ screen: "business", businessId: businesses[0]!.businessId });
+    else navigate({ screen: "portfolio" });
+  };
+  const goToFinances = () => navigate({ screen: "finances" });
+
+  const businessActive = route.screen === "business" || route.screen === "portfolio" || route.screen === "workforce";
 
   return (
     <nav className="bottom-nav">
-      {TABS.slice(0, 2).map((tab) => (
-        <NavItem key={tab.screen} tab={tab} active={route.screen === tab.screen} onClick={() => navigate(routeFor(tab.screen))} />
-      ))}
+      <NavItem tab={{ label: "Accueil", icon: "🏠" }} active={route.screen === "dashboard"} onClick={() => navigate({ screen: "dashboard" })} />
+      <NavItem tab={{ label: "Carrière", icon: "💼" }} active={route.screen === "career"} onClick={() => navigate({ screen: "career" })} />
       <button className="bottom-nav__end-month" onClick={endMonth} aria-label="Terminer le mois">
         <span className="bottom-nav__end-month-icon">▶</span>
         <span>Fin de mois</span>
       </button>
-      {TABS.slice(2).map((tab) => (
-        <NavItem key={tab.screen} tab={tab} active={route.screen === tab.screen} onClick={() => navigate(routeFor(tab.screen))} />
-      ))}
+      <NavItem tab={{ label: "Talents", icon: "🎯" }} active={route.screen === "skills"} onClick={() => navigate({ screen: "skills" })} />
+      <NavItem tab={{ label: "Entreprise", icon: "🏢" }} active={businessActive} onClick={goToBusiness} />
+      <NavItem tab={{ label: "Finances", icon: "📊" }} active={route.screen === "finances"} onClick={goToFinances} />
     </nav>
   );
-}
-
-function routeFor(screen: Route["screen"]): Route {
-  if (screen === "createBusiness") return { screen: "createBusiness", family: "" };
-  return { screen } as Route;
 }
 
 function NavItem({
@@ -39,7 +37,7 @@ function NavItem({
   active,
   onClick,
 }: {
-  readonly tab: { readonly screen: Route["screen"]; readonly label: string; readonly icon: string };
+  readonly tab: { readonly label: string; readonly icon: string };
   readonly active: boolean;
   readonly onClick: () => void;
 }) {

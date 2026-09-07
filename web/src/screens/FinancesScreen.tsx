@@ -5,20 +5,21 @@ import { Money } from "../components/ui/Money";
 import { findInfrastructureOption } from "../data/infrastructure";
 import { ADMIN_COMPONENTS, requiredAdminComponents } from "../data/adminServices";
 
-export function FinancesScreen() {
+export function FinancesScreen({ businessId }: { readonly businessId?: string }) {
   const { state } = useGame();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const gameState = state.gameState;
   if (!gameState) return null;
 
-  const business = gameState.businesses[0] ?? null;
+  const business = (businessId ? gameState.businesses.find((b) => b.id === businessId) : gameState.businesses[0]) ?? null;
   const statement = business?.lastStatement ?? null;
   const identity = business ? state.businessIdentities[business.id] : undefined;
-  const draftBusiness = business && state.draft.business?.businessId === business.id ? state.draft.business : null;
+  const draftBusiness = business ? state.draft.businesses.find((b) => b.businessId === business.id) ?? null : null;
   const infrastructure = draftBusiness ? findInfrastructureOption(draftBusiness.infrastructureId) : undefined;
   const includedAdminComponents = draftBusiness
     ? [...requiredAdminComponents(), ...ADMIN_COMPONENTS.filter((c) => draftBusiness.adminOptionalIds.includes(c.id))]
     : [];
+  const properties = business?.business.properties ?? [];
 
   return (
     <div className="stack">
@@ -29,6 +30,16 @@ export function FinancesScreen() {
         <div className="section-title">Personnel</div>
         <StatTile label="Cash personnel" value={<Money amount={gameState.character.cash} />} />
       </div>
+
+      {gameState.businesses.length > 1 ? (
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          {gameState.businesses.map((b) => (
+            <span key={b.id} className={`pill${b.id === business?.id ? " pill--accent" : ""}`}>
+              {state.businessIdentities[b.id]?.displayName ?? "Entreprise"}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {business && statement ? (
         <div className="card stack">
@@ -69,6 +80,18 @@ export function FinancesScreen() {
               <DetailRow label="Ligne de crédit tirée" value={business.business.treasury.creditLine.drawn} />
               <DetailRow label="Ligne de crédit disponible" value={business.business.treasury.creditLine.limit} />
               <DetailRow label="Obligations impayées" value={business.business.treasury.unpaidObligations} />
+              {properties.length > 0 ? (
+                <>
+                  <hr className="divider" />
+                  {properties.map((property) => (
+                    <div className="stack stack--tight" key={property.id}>
+                      <DetailRow label="Bien immobilier — valeur" value={property.marketValue} />
+                      <DetailRow label="Bien immobilier — entretien mensuel" value={property.monthlyMaintenance} />
+                      {property.mortgage ? <DetailRow label="Emprunt immobilier restant dû" value={property.mortgage.principalRemaining} /> : null}
+                    </div>
+                  ))}
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>

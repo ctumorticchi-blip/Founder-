@@ -6,12 +6,14 @@ import {
   type BusinessFamilyDecisions,
   type GameDate,
   type GameState,
+  type SaleDecision,
   type TimeCategory,
 } from "@founder/engine";
 import { OPPORTUNITIES } from "../data/opportunities";
 import { generateSeed } from "../lib/seed";
 import { loadSave, writeSave, clearSave } from "../lib/storage";
 import { TOTAL_MONTHLY_HOURS, buildMonthActions, createEmptyDraft, deriveNextDraft } from "./draft";
+import { sanitizeEngineError } from "./errorMessages";
 import type {
   BusinessDraft,
   BusinessIdentity,
@@ -20,6 +22,7 @@ import type {
   MonthDraft,
   MonthRecap,
   Purchase,
+  PropertyPurchaseDraft,
   SaveGameV1,
 } from "./types";
 
@@ -93,6 +96,19 @@ function startNewGame(): AppState {
   };
 }
 
+/** Applique `updater` à l'entreprise `businessId` du portefeuille, no-op si elle n'existe pas dans le brouillon. */
+function updateBusinessDraft(
+  state: AppState,
+  businessId: string,
+  updater: (business: BusinessDraft) => BusinessDraft,
+): AppState {
+  const index = state.draft.businesses.findIndex((b) => b.businessId === businessId);
+  if (index === -1) return state;
+  const businesses = state.draft.businesses.slice();
+  businesses[index] = updater(businesses[index]!);
+  return { ...state, draft: { ...state.draft, businesses } };
+}
+
 type Action =
   | { type: "NEW_GAME" }
   | { type: "LOAD"; save: SaveGameV1 }
@@ -100,13 +116,17 @@ type Action =
   | { type: "SET_TIME_ALLOCATION"; allocation: Record<TimeCategory, number> }
   | { type: "SET_JOB"; job: JobDraft | null }
   | { type: "START_BUSINESS"; draft: BusinessDraft }
-  | { type: "UPDATE_DECISIONS"; decisions: BusinessFamilyDecisions }
-  | { type: "SET_MARKETING_BUDGET"; value: number }
-  | { type: "SET_INFRASTRUCTURE"; infrastructureId: string }
-  | { type: "SET_ADMIN_OPTIONAL_IDS"; adminOptionalIds: readonly string[] }
-  | { type: "SET_PURCHASES"; purchases: readonly Purchase[] }
-  | { type: "SET_TARGET_HEADCOUNT"; value: number | null }
-  | { type: "SET_CAPITAL_INJECTION"; value: number }
+  | { type: "UPDATE_DECISIONS"; businessId: string; decisions: BusinessFamilyDecisions }
+  | { type: "SET_MARKETING_BUDGET"; businessId: string; value: number }
+  | { type: "SET_INFRASTRUCTURE"; businessId: string; infrastructureId: string }
+  | { type: "SET_ADMIN_OPTIONAL_IDS"; businessId: string; adminOptionalIds: readonly string[] }
+  | { type: "SET_PURCHASES"; businessId: string; purchases: readonly Purchase[] }
+  | { type: "SET_TARGET_HEADCOUNT"; businessId: string; value: number | null }
+  | { type: "SET_CAPITAL_INJECTION"; businessId: string; value: number }
+  | { type: "SET_PROSPECTION_HOURS"; businessId: string; value: number }
+  | { type: "SET_FOUNDER_HOURS"; businessId: string; value: number }
+  | { type: "SET_PROPERTY_PURCHASE"; businessId: string; value: PropertyPurchaseDraft | null }
+  | { type: "SET_SALE_DECISION"; businessId: string; value: SaleDecision | null }
   | { type: "END_MONTH" }
   | { type: "DISMISS_RECAP" }
   | { type: "CLEAR_ERROR" };
@@ -137,10 +157,18 @@ function reducer(state: AppState, action: Action): AppState {
     case "START_BUSINESS": {
       // Alloue par défaut le temps disponible restant à la nouvelle entreprise,
       // pour qu'elle produise dès son premier mois même si le joueur ne
-      // touche pas manuellement au curseur de temps.
+      // touche pas manuellement au curseur de temps. Les entreprises
+      // existantes du portefeuille ne sont jamais retirées (spec M11.1.5 §5).
       const alreadyAllocated =
         state.draft.timeAllocation.emploi + state.draft.timeAllocation.apprentissage + state.draft.timeAllocation.reseau;
-      const availableForBusiness = Math.max(0, TOTAL_MONTHLY_HOURS - alreadyAllocated);
+      const alreadyUsedByOtherBusinesses = state.draft.businesses.reduce((sum, b) => sum + b.founderHoursAllocated + b.prospectionHours, 0);
+      // Budget total restant pour CETTE entreprise (production + prospection
+      // confondues) : ne jamais dépasser le budget mensuel global, même
+      // lorsque le temps de prospection recommandé par l'opportunité ne
+      // tient pas dans ce qu'il reste (spec M11.1.5 §5.3, §7.2).
+      const remainingForNewBusiness = Math.max(0, TOTAL_MONTHLY_HOURS - alreadyAllocated - alreadyUsedByOtherBusinesses);
+      const prospectionHours = Math.min(action.draft.prospectionHours, remainingForNewBusiness);
+      const availableForProduction = Math.max(0, remainingForNewBusiness - prospectionHours);
       const identity: BusinessIdentity = {
         displayName: action.draft.name,
         description: action.draft.description,
@@ -148,54 +176,53 @@ function reducer(state: AppState, action: Action): AppState {
         targetCustomers: action.draft.targetCustomers,
         createdAt: state.gameState?.date ?? { year: 0, month: 1 },
       };
+      const draftWithHours: BusinessDraft = { ...action.draft, founderHoursAllocated: availableForProduction, prospectionHours };
       return {
         ...state,
         draft: {
           ...state.draft,
-          timeAllocation: { ...state.draft.timeAllocation, business: availableForBusiness },
-          business: action.draft,
+          timeAllocation: {
+            ...state.draft.timeAllocation,
+            business: state.draft.timeAllocation.business + availableForProduction + prospectionHours,
+          },
+          businesses: [...state.draft.businesses, draftWithHours],
         },
         businessIdentities: { ...state.businessIdentities, [action.draft.businessId]: identity },
       };
     }
     case "UPDATE_DECISIONS":
-      if (!state.draft.business) return state;
-      return { ...state, draft: { ...state.draft, business: { ...state.draft.business, decisions: action.decisions } } };
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, decisions: action.decisions }));
     case "SET_MARKETING_BUDGET":
-      if (!state.draft.business) return state;
-      return { ...state, draft: { ...state.draft, business: { ...state.draft.business, marketingBudget: action.value } } };
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, marketingBudget: action.value }));
     case "SET_INFRASTRUCTURE":
-      if (!state.draft.business) return state;
-      return {
-        ...state,
-        draft: { ...state.draft, business: { ...state.draft.business, infrastructureId: action.infrastructureId } },
-      };
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, infrastructureId: action.infrastructureId }));
     case "SET_ADMIN_OPTIONAL_IDS":
-      if (!state.draft.business) return state;
-      return {
-        ...state,
-        draft: { ...state.draft, business: { ...state.draft.business, adminOptionalIds: action.adminOptionalIds } },
-      };
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, adminOptionalIds: action.adminOptionalIds }));
     case "SET_PURCHASES":
-      if (!state.draft.business) return state;
-      return { ...state, draft: { ...state.draft, business: { ...state.draft.business, purchases: action.purchases } } };
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, purchases: action.purchases }));
     case "SET_TARGET_HEADCOUNT":
-      if (!state.draft.business) return state;
-      return { ...state, draft: { ...state.draft, business: { ...state.draft.business, targetHeadcount: action.value } } };
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, targetHeadcount: action.value }));
     case "SET_CAPITAL_INJECTION":
-      if (!state.draft.business) return state;
-      return { ...state, draft: { ...state.draft, business: { ...state.draft.business, capitalInjection: action.value } } };
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, capitalInjection: action.value }));
+    case "SET_PROSPECTION_HOURS":
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, prospectionHours: action.value }));
+    case "SET_FOUNDER_HOURS":
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, founderHoursAllocated: action.value }));
+    case "SET_PROPERTY_PURCHASE":
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, propertyPurchase: action.value }));
+    case "SET_SALE_DECISION":
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, saleDecision: action.value }));
     case "END_MONTH": {
       if (!state.gameState || state.seed === null || !state.birthDate) return state;
       try {
-        const actions = buildMonthActions(state.draft);
+        const actions = buildMonthActions(state.draft, state.gameState);
         const next = simulateMonth(state.gameState, actions, state.seed);
         const recap = computeRecap(state.gameState, next, state.birthDate, state.businessIdentities);
         const nextDraft = deriveNextDraft(state.draft, next);
         return { ...state, gameState: next, draft: nextDraft, lastRecap: recap, error: null };
       } catch (thrown) {
         const message = thrown instanceof Error ? thrown.message : "Une erreur inattendue est survenue.";
-        return { ...state, error: message };
+        return { ...state, error: sanitizeEngineError(message, state.businessIdentities) };
       }
     }
     case "DISMISS_RECAP":
@@ -229,13 +256,17 @@ interface GameContextValue {
   readonly setTimeAllocation: (allocation: Record<TimeCategory, number>) => void;
   readonly setJob: (job: JobDraft | null) => void;
   readonly startBusiness: (draft: BusinessDraft) => void;
-  readonly updateDecisions: (decisions: BusinessFamilyDecisions) => void;
-  readonly setMarketingBudget: (value: number) => void;
-  readonly setInfrastructure: (infrastructureId: string) => void;
-  readonly setAdminOptionalIds: (adminOptionalIds: readonly string[]) => void;
-  readonly setPurchases: (purchases: readonly Purchase[]) => void;
-  readonly setTargetHeadcount: (value: number | null) => void;
-  readonly setCapitalInjection: (value: number) => void;
+  readonly updateDecisions: (businessId: string, decisions: BusinessFamilyDecisions) => void;
+  readonly setMarketingBudget: (businessId: string, value: number) => void;
+  readonly setInfrastructure: (businessId: string, infrastructureId: string) => void;
+  readonly setAdminOptionalIds: (businessId: string, adminOptionalIds: readonly string[]) => void;
+  readonly setPurchases: (businessId: string, purchases: readonly Purchase[]) => void;
+  readonly setTargetHeadcount: (businessId: string, value: number | null) => void;
+  readonly setCapitalInjection: (businessId: string, value: number) => void;
+  readonly setProspectionHours: (businessId: string, value: number) => void;
+  readonly setFounderHours: (businessId: string, value: number) => void;
+  readonly setPropertyPurchase: (businessId: string, value: PropertyPurchaseDraft | null) => void;
+  readonly setSaleDecision: (businessId: string, value: SaleDecision | null) => void;
   readonly endMonth: () => void;
   readonly dismissRecap: () => void;
   readonly clearError: () => void;
@@ -269,13 +300,17 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
       setTimeAllocation: (allocation) => dispatch({ type: "SET_TIME_ALLOCATION", allocation }),
       setJob: (job) => dispatch({ type: "SET_JOB", job }),
       startBusiness: (draft) => dispatch({ type: "START_BUSINESS", draft }),
-      updateDecisions: (decisions) => dispatch({ type: "UPDATE_DECISIONS", decisions }),
-      setMarketingBudget: (value) => dispatch({ type: "SET_MARKETING_BUDGET", value }),
-      setInfrastructure: (infrastructureId) => dispatch({ type: "SET_INFRASTRUCTURE", infrastructureId }),
-      setAdminOptionalIds: (adminOptionalIds) => dispatch({ type: "SET_ADMIN_OPTIONAL_IDS", adminOptionalIds }),
-      setPurchases: (purchases) => dispatch({ type: "SET_PURCHASES", purchases }),
-      setTargetHeadcount: (value) => dispatch({ type: "SET_TARGET_HEADCOUNT", value }),
-      setCapitalInjection: (value) => dispatch({ type: "SET_CAPITAL_INJECTION", value }),
+      updateDecisions: (businessId, decisions) => dispatch({ type: "UPDATE_DECISIONS", businessId, decisions }),
+      setMarketingBudget: (businessId, value) => dispatch({ type: "SET_MARKETING_BUDGET", businessId, value }),
+      setInfrastructure: (businessId, infrastructureId) => dispatch({ type: "SET_INFRASTRUCTURE", businessId, infrastructureId }),
+      setAdminOptionalIds: (businessId, adminOptionalIds) => dispatch({ type: "SET_ADMIN_OPTIONAL_IDS", businessId, adminOptionalIds }),
+      setPurchases: (businessId, purchases) => dispatch({ type: "SET_PURCHASES", businessId, purchases }),
+      setTargetHeadcount: (businessId, value) => dispatch({ type: "SET_TARGET_HEADCOUNT", businessId, value }),
+      setCapitalInjection: (businessId, value) => dispatch({ type: "SET_CAPITAL_INJECTION", businessId, value }),
+      setProspectionHours: (businessId, value) => dispatch({ type: "SET_PROSPECTION_HOURS", businessId, value }),
+      setFounderHours: (businessId, value) => dispatch({ type: "SET_FOUNDER_HOURS", businessId, value }),
+      setPropertyPurchase: (businessId, value) => dispatch({ type: "SET_PROPERTY_PURCHASE", businessId, value }),
+      setSaleDecision: (businessId, value) => dispatch({ type: "SET_SALE_DECISION", businessId, value }),
       endMonth: () => dispatch({ type: "END_MONTH" }),
       dismissRecap: () => dispatch({ type: "DISMISS_RECAP" }),
       clearError: () => dispatch({ type: "CLEAR_ERROR" }),

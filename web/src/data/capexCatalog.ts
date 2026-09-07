@@ -9,6 +9,13 @@ export interface CapexItem {
   readonly label: string;
   readonly unitCost: number;
   readonly description: string;
+  /**
+   * Ids d'infrastructure où cet item ne peut pas être acheté (spec
+   * M11.1.5 §3.1 : "équipement incompatible refusé"). Filtrage pur,
+   * data-driven — pas une nouvelle mécanique de capacité numérique.
+   * Absent = compatible partout.
+   */
+  readonly incompatibleWithInfrastructureIds?: readonly string[];
 }
 
 export const CAPEX_ITEMS: readonly CapexItem[] = [
@@ -35,9 +42,14 @@ export const CAPEX_ITEMS: readonly CapexItem[] = [
     label: "Aménagement des locaux",
     unitCost: 5_000,
     description: "Travaux et agencement pour rendre un local opérationnel.",
+    incompatibleWithInfrastructureIds: ["domicile", "coworking"],
   },
 ];
 
 export function findCapexItem(id: string): CapexItem | undefined {
   return CAPEX_ITEMS.find((item) => item.id === id);
+}
+
+export function capexItemsForInfrastructure(infrastructureId: string): readonly CapexItem[] {
+  return CAPEX_ITEMS.filter((item) => !item.incompatibleWithInfrastructureIds?.includes(infrastructureId));
 }

@@ -12,7 +12,13 @@ export type GameEventKind =
   | "business-liquidated"
   | "cash-crisis-warning"
   | "capital-injected"
-  | "market-opportunity-detected";
+  | "market-opportunity-detected"
+  /** Passe-plat narratif générique (spec M11.1.5 §3.3) : le moteur relaie `BusinessAction.note` verbatim, sans l'interpréter. */
+  | "business-note"
+  | "property-purchased"
+  | "business-listed-for-sale"
+  | "sale-offer-received"
+  | "business-sold";
 
 /** Événement du mois courant (transitoire : renvoyé par simulateMonth, pas nécessairement mémorisé). */
 export interface GameEvent {

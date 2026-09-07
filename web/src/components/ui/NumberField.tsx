@@ -22,18 +22,18 @@ export function NumberField({
       <label>
         {label}
         {suffix ? ` (${suffix})` : ""}
+        <input
+          type="number"
+          value={Number.isFinite(value) ? value : 0}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(event) => {
+            const parsed = Number(event.target.value);
+            onChange(Number.isFinite(parsed) ? parsed : 0);
+          }}
+        />
       </label>
-      <input
-        type="number"
-        value={Number.isFinite(value) ? value : 0}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(event) => {
-          const parsed = Number(event.target.value);
-          onChange(Number.isFinite(parsed) ? parsed : 0);
-        }}
-      />
       {hint ? <span className="text-tertiary text-sm">{hint}</span> : null}
     </div>
   );

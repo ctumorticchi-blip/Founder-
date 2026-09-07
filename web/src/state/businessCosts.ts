@@ -1,3 +1,4 @@
+import type { OwnedProperty } from "@founder/engine";
 import { ADMIN_COMPONENTS, requiredAdminComponents } from "../data/adminServices";
 import { findCapexItem } from "../data/capexCatalog";
 import { findInfrastructureOption } from "../data/infrastructure";
@@ -32,4 +33,28 @@ export function computePurchasesCost(purchases: readonly Purchase[]): number {
     const item = findCapexItem(purchase.itemId);
     return sum + (item?.unitCost ?? 0) * purchase.quantity;
   }, 0);
+}
+
+export function computeInfrastructureHeadcountCapacity(infrastructureId: string): number {
+  return findInfrastructureOption(infrastructureId)?.headcountCapacity ?? 0;
+}
+
+export function computeInfrastructureStorageCapacity(infrastructureId: string): number {
+  return findInfrastructureOption(infrastructureId)?.storageCapacity ?? 0;
+}
+
+/**
+ * Capacité effective d'une entreprise (spec M11.1.5 §3, §4) : le plus
+ * favorable entre l'infrastructure louée actuelle et tout bien immobilier
+ * possédé — posséder un local ne réduit jamais la capacité déjà acquise
+ * par ailleurs.
+ */
+export function computeEffectiveHeadcountCapacity(infrastructureId: string, ownedProperties: readonly OwnedProperty[]): number {
+  const propertyCapacity = ownedProperties.reduce((max, property) => Math.max(max, property.headcountCapacity), 0);
+  return Math.max(computeInfrastructureHeadcountCapacity(infrastructureId), propertyCapacity);
+}
+
+export function computeEffectiveStorageCapacity(infrastructureId: string, ownedProperties: readonly OwnedProperty[]): number {
+  const propertyCapacity = ownedProperties.reduce((max, property) => Math.max(max, property.storageCapacity), 0);
+  return Math.max(computeInfrastructureStorageCapacity(infrastructureId), propertyCapacity);
 }

@@ -126,6 +126,33 @@ export { type IntelligenceSkills, projectMarketView } from "./engine/intelligenc
 export type { GameEvent, GameEventKind, MemoryEntry } from "./types/narrative.js";
 export { appendToMemory } from "./engine/narrative/narrative.js";
 
+export type { Mortgage, OwnedProperty, PropertyPurchaseSpec } from "./types/realEstate.js";
+export {
+  MORTGAGE_DEBT_SERVICE_RATIO,
+  applyMortgagePayment,
+  computeMortgagePayment,
+  computeTotalMaintenance,
+  evaluateFinancingEligibility,
+  purchaseProperty,
+  type FinancingEligibilityInput,
+  type FinancingEligibilityResult,
+  type MortgagePaymentResult,
+} from "./engine/business/realEstate.js";
+
+export type { ValuationFactor, ValuationResult } from "./types/valuation.js";
+export { computeValuation } from "./engine/business/valuation.js";
+
+export type { SaleClosing, SaleDecision, SaleOffer, SaleProcessState, SaleStatus } from "./types/sale.js";
+export {
+  COUNTER_OFFER_ACCEPTANCE_MULTIPLE,
+  MIN_MONTHS_LISTED_BEFORE_OFFER,
+  TRANSACTION_COST_RATE,
+  advanceSaleProcess,
+  closeSale,
+  resolveSaleDecision,
+  startSaleProcess,
+} from "./engine/business/sale.js";
+
 export type {
   BusinessAction,
   BusinessFamilyDecisions,

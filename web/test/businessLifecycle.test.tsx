@@ -11,7 +11,6 @@ describe("Cycle de vie d'une entreprise", () => {
     await user.click(screen.getByRole("button", { name: /commencer ma vie/i }));
 
     await user.click(screen.getByRole("button", { name: /entreprise/i }));
-    await user.click(await screen.findByRole("button", { name: /explorer les opportunités/i }));
 
     await user.click(await screen.findByText(/société de nettoyage/i));
     expect(await screen.findByRole("heading", { name: /société de nettoyage/i })).toBeInTheDocument();

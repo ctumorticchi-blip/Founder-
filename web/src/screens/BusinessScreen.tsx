@@ -4,12 +4,14 @@ import { DecisionFields } from "../components/business/DecisionFields";
 import { InfrastructurePicker } from "../components/business/InfrastructurePicker";
 import { AdminBreakdown } from "../components/business/AdminBreakdown";
 import { CapexPicker } from "../components/business/CapexPicker";
+import { TimeAllocationPanel } from "../components/business/TimeAllocationPanel";
+import { PropertyPurchasePanel } from "../components/business/PropertyPurchasePanel";
+import { SalePanel } from "../components/business/SalePanel";
 import { NumberField } from "../components/ui/NumberField";
-import { RangeField } from "../components/ui/RangeField";
 import { StatTile } from "../components/ui/StatTile";
 import { Money } from "../components/ui/Money";
-import { formatHours } from "../lib/format";
-import { remainingHours } from "../state/draft";
+import { totalFounderBusinessHours } from "../state/draft";
+import { computeValuation } from "@founder/engine";
 
 const FAMILY_LABELS: Record<string, string> = {
   service: "Société de service",
@@ -19,7 +21,7 @@ const FAMILY_LABELS: Record<string, string> = {
   agency: "Agence de conseil",
 };
 
-export function BusinessScreen() {
+export function BusinessScreen({ businessId }: { readonly businessId: string }) {
   const {
     state,
     updateDecisions,
@@ -28,14 +30,17 @@ export function BusinessScreen() {
     setAdminOptionalIds,
     setPurchases,
     setCapitalInjection,
-    setTimeAllocation,
+    setProspectionHours,
+    setFounderHours,
+    setPropertyPurchase,
+    setSaleDecision,
   } = useGame();
   const { navigate } = useNavigation();
   const gameState = state.gameState;
   if (!gameState) return null;
 
-  const draftBusiness = state.draft.business;
-  const business = draftBusiness ? gameState.businesses.find((b) => b.id === draftBusiness.businessId) ?? null : null;
+  const draftBusiness = state.draft.businesses.find((b) => b.businessId === businessId) ?? null;
+  const business = gameState.businesses.find((b) => b.id === businessId) ?? null;
 
   if (!draftBusiness) {
     return (
@@ -43,7 +48,7 @@ export function BusinessScreen() {
         <h1 className="screen-title">Entreprise</h1>
         <div className="empty-state">
           <div className="empty-state__icon">🏢</div>
-          <p>Vous n'avez pas encore d'entreprise.</p>
+          <p>Cette entreprise n'existe plus.</p>
           <button className="btn btn--primary" style={{ marginTop: 16 }} onClick={() => navigate({ screen: "opportunities" })}>
             Explorer les opportunités
           </button>
@@ -55,8 +60,20 @@ export function BusinessScreen() {
   const treasury = business?.business.treasury ?? null;
   const identity = state.businessIdentities[draftBusiness.businessId];
 
+  // Bornes de temps (spec M11.1.5 §5.3, §7.2) : le budget "business" est
+  // partagé entre TOUTES les entreprises — jamais un dédoublement de temps.
+  const usedByOtherBusinesses = totalFounderBusinessHours(state.draft) - draftBusiness.founderHoursAllocated - draftBusiness.prospectionHours;
+  const budgetRemainingForThisBusiness = Math.max(0, state.draft.timeAllocation.business - usedByOtherBusinesses);
+  const founderHoursMax = Math.max(0, budgetRemainingForThisBusiness - draftBusiness.prospectionHours);
+  const prospectionHoursMax = Math.max(0, budgetRemainingForThisBusiness - draftBusiness.founderHoursAllocated);
+
+  const valuation = business?.lastStatement ? computeValuation(business.business, business.lastStatement, business.workforce) : null;
+
   return (
     <div className="stack">
+      <button className="top-back" onClick={() => navigate({ screen: "portfolio" })}>
+        ← Mes entreprises
+      </button>
       <div className="row row--between">
         <h1 className="screen-title" style={{ marginBottom: 0 }}>
           {identity?.displayName ?? "Mon entreprise"}
@@ -75,18 +92,14 @@ export function BusinessScreen() {
       ) : null}
 
       <div className="card">
-        <RangeField
-          label="Votre temps consacré à l'entreprise ce mois-ci"
-          value={state.draft.timeAllocation.business}
-          max={state.draft.timeAllocation.business + Math.max(0, remainingHours(state.draft))}
-          valueLabel={formatHours(state.draft.timeAllocation.business)}
-          onChange={(business) => setTimeAllocation({ ...state.draft.timeAllocation, business })}
+        <TimeAllocationPanel
+          founderHoursAllocated={draftBusiness.founderHoursAllocated}
+          prospectionHours={draftBusiness.prospectionHours}
+          founderHoursMax={founderHoursMax}
+          prospectionHoursMax={prospectionHoursMax}
+          onFounderHoursChange={(value) => setFounderHours(draftBusiness.businessId, value)}
+          onProspectionHoursChange={(value) => setProspectionHours(draftBusiness.businessId, value)}
         />
-        {state.draft.timeAllocation.business <= 0 ? (
-          <p className="text-sm" style={{ color: "var(--warning)", marginTop: 8 }}>
-            ⚠️ Sans votre temps (ni salariés), l'entreprise ne produira rien ce mois-ci.
-          </p>
-        ) : null}
       </div>
 
       {treasury ? (
@@ -105,7 +118,7 @@ export function BusinessScreen() {
       ) : null}
 
       {business?.lastStatement ? (
-        <div className="card card--interactive" onClick={() => navigate({ screen: "finances" })}>
+        <div className="card card--interactive" onClick={() => navigate({ screen: "finances", businessId: draftBusiness.businessId })}>
           <div className="row row--between">
             <div className="section-title" style={{ marginBottom: 0 }}>
               Dernier mois
@@ -124,7 +137,7 @@ export function BusinessScreen() {
       ) : null}
 
       {business ? (
-        <div className="card card--interactive" onClick={() => navigate({ screen: "workforce" })}>
+        <div className="card card--interactive" onClick={() => navigate({ screen: "workforce", businessId: draftBusiness.businessId })}>
           <div className="row row--between">
             <div>
               <div className="section-title" style={{ marginBottom: 0 }}>
@@ -141,8 +154,13 @@ export function BusinessScreen() {
 
       <div className="card stack">
         <div className="section-title">Décisions du mois</div>
-        <DecisionFields decisions={draftBusiness.decisions} onChange={updateDecisions} />
-        <NumberField label="Budget marketing" value={draftBusiness.marketingBudget} suffix="€/mois" onChange={setMarketingBudget} />
+        <DecisionFields decisions={draftBusiness.decisions} onChange={(decisions) => updateDecisions(draftBusiness.businessId, decisions)} />
+        <NumberField
+          label="Budget marketing"
+          value={draftBusiness.marketingBudget}
+          suffix="€/mois"
+          onChange={(value) => setMarketingBudget(draftBusiness.businessId, value)}
+        />
       </div>
 
       <div className="card">
@@ -150,17 +168,36 @@ export function BusinessScreen() {
           family={draftBusiness.family}
           selectedId={draftBusiness.infrastructureId}
           isNew={draftBusiness.isNew}
-          onChange={setInfrastructure}
+          committedInfrastructureId={draftBusiness.committedInfrastructureId}
+          currentHeadcount={business?.workforce.headcount}
+          onChange={(infrastructureId) => setInfrastructure(draftBusiness.businessId, infrastructureId)}
         />
       </div>
 
       <div className="card">
-        <AdminBreakdown optionalIds={draftBusiness.adminOptionalIds} onChange={setAdminOptionalIds} />
+        <AdminBreakdown optionalIds={draftBusiness.adminOptionalIds} onChange={(ids) => setAdminOptionalIds(draftBusiness.businessId, ids)} />
       </div>
 
       <div className="card">
-        <CapexPicker purchases={draftBusiness.purchases} onChange={setPurchases} />
+        <CapexPicker purchases={draftBusiness.purchases} onChange={(purchases) => setPurchases(draftBusiness.businessId, purchases)} />
       </div>
+
+      {business && draftBusiness.infrastructureId !== "domicile" ? (
+        <div className="card">
+          <PropertyPurchasePanel
+            family={draftBusiness.family}
+            ownedProperties={business.business.properties}
+            propertyPurchase={draftBusiness.propertyPurchase}
+            personalCash={gameState.character.cash}
+            onSelect={(listingId) => setPropertyPurchase(draftBusiness.businessId, { listingId, downPaymentFromPersonalCash: 0 })}
+            onDownPaymentChange={(value) =>
+              draftBusiness.propertyPurchase &&
+              setPropertyPurchase(draftBusiness.businessId, { ...draftBusiness.propertyPurchase, downPaymentFromPersonalCash: value })
+            }
+            onClear={() => setPropertyPurchase(draftBusiness.businessId, null)}
+          />
+        </div>
+      ) : null}
 
       <div className="card stack">
         <div className="section-title">Apport de capital personnel</div>
@@ -172,9 +209,24 @@ export function BusinessScreen() {
           value={draftBusiness.capitalInjection}
           suffix="€"
           max={gameState.character.cash}
-          onChange={setCapitalInjection}
+          onChange={(value) => setCapitalInjection(draftBusiness.businessId, value)}
         />
       </div>
+
+      {business && valuation ? (
+        <div className="card">
+          <SalePanel
+            valuation={valuation}
+            saleProcess={business.saleProcess}
+            hasPendingDecision={draftBusiness.saleDecision !== null}
+            onList={() => setSaleDecision(draftBusiness.businessId, { action: "list" })}
+            onWithdraw={() => setSaleDecision(draftBusiness.businessId, { action: "withdraw" })}
+            onAccept={() => setSaleDecision(draftBusiness.businessId, { action: "accept" })}
+            onReject={() => setSaleDecision(draftBusiness.businessId, { action: "reject" })}
+            onCounter={(amount) => setSaleDecision(draftBusiness.businessId, { action: "counter", counterAmount: amount })}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

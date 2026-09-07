@@ -33,10 +33,13 @@ function serviceAction(overrides: Partial<BusinessAction> = {}): BusinessAction 
   return {
     businessId: "svc",
     founderHoursAllocated: 150,
+    founderProspectionHoursAllocated: 0,
     decisions: { family: "service", price: 40, targetHours: 100_000 }, // capacity-bound par défaut
     marketingBudget: 0,
     rentBudget: 0,
     adminBudget: 0,
+    headcountCapacity: Number.POSITIVE_INFINITY,
+    storageCapacity: Number.POSITIVE_INFINITY,
     ...overrides,
   };
 }
@@ -130,10 +133,13 @@ describe("resolveBusinessMonth — sous-effectif (Subscription : pénalité de c
     const action: BusinessAction = {
       businessId: "sub",
       founderHoursAllocated: 100,
+      founderProspectionHoursAllocated: 0,
       decisions: { family: "subscription", newSubscribers: 0 },
       marketingBudget: 0,
       rentBudget: 0,
       adminBudget: 0,
+      headcountCapacity: Number.POSITIVE_INFINITY,
+      storageCapacity: Number.POSITIVE_INFINITY,
     };
 
     const understaffed = resolveBusinessMonth(owned, { ...action, targetHeadcount: 0 }, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1));
@@ -152,10 +158,13 @@ describe("resolveBusinessMonth — rejette une famille de décisions incompatibl
     const wrongAction: BusinessAction = {
       businessId: "svc",
       founderHoursAllocated: 100,
+      founderProspectionHoursAllocated: 0,
       decisions: { family: "subscription", newSubscribers: 10 },
       marketingBudget: 0,
       rentBudget: 0,
       adminBudget: 0,
+      headcountCapacity: Number.POSITIVE_INFINITY,
+      storageCapacity: Number.POSITIVE_INFINITY,
     };
     expect(() => resolveBusinessMonth(owned, wrongAction, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1))).toThrow(RangeError);
   });

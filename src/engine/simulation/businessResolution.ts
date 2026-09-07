@@ -8,6 +8,13 @@ import {
 } from "../employees/employees.js";
 import { computeMonthlyFinancials } from "../business/accounting.js";
 import { applyMonthlyCashFlow, computeMonthlyInterest, injectCapital, type FinancingOutcome } from "../business/treasury.js";
+import {
+  applyMortgagePayment,
+  computeMortgagePayment,
+  computeTotalMaintenance,
+  evaluateFinancingEligibility,
+  purchaseProperty,
+} from "../business/realEstate.js";
 import { computeServiceMonth } from "../economic-models/service.js";
 import { computeHospitalityMonth } from "../economic-models/hospitality.js";
 import { computeSubscriptionMonth } from "../economic-models/subscription.js";
@@ -16,6 +23,7 @@ import { AgencyEngine } from "../economic-models/agency.js";
 import { createBusiness } from "../business/treasury.js";
 import { createWorkforce } from "../employees/employees.js";
 import type { MonthlyFinancialStatement } from "../../types/business.js";
+import type { OwnedProperty } from "../../types/realEstate.js";
 import type { BusinessAction, BusinessFamilyState, CreateBusinessSpec, OwnedBusiness } from "./types.js";
 
 const INITIAL_REPUTATION_SCORE = 0.1;
@@ -58,7 +66,7 @@ export function createOwnedBusiness(id: string, spec: CreateBusinessSpec): Owned
       break;
   }
 
-  return { id, business, workforce, marketId: spec.marketId, familyState };
+  return { id, business, workforce, marketId: spec.marketId, familyState, saleProcess: null };
 }
 
 /** Taux d'imposition standard appliqué en P0 (simplification : pas de barème progressif). */
@@ -215,25 +223,66 @@ export function resolveBusinessMonth(
     }
   }
 
-  const interest = computeMonthlyInterest(owned.business.treasury.creditLine);
+  // Immobilier (spec M11.1.5 §4.3) : mensualités des emprunts existants
+  // appliquées chaque mois, avant tout achat éventuel ce mois-ci (un bien
+  // acheté ce mois-ci ne paie pas encore de mensualité).
+  const mortgagePayments = owned.business.properties.map((property) =>
+    property.mortgage ? { property, payment: applyMortgagePayment(property.mortgage) } : { property, payment: null },
+  );
+  const propertiesAfterPayments: OwnedProperty[] = mortgagePayments.map(({ property, payment }) =>
+    payment ? { ...property, mortgage: payment.mortgage } : property,
+  );
+  const totalMortgageInterest = mortgagePayments.reduce((sum, { payment }) => sum + (payment?.interestPortion ?? 0), 0);
+  const totalMortgagePrincipal = mortgagePayments.reduce((sum, { payment }) => sum + (payment?.principalPortion ?? 0), 0);
+  const totalMaintenance = computeTotalMaintenance(propertiesAfterPayments);
+
+  const interest = computeMonthlyInterest(owned.business.treasury.creditLine) + totalMortgageInterest;
   const statement = computeMonthlyFinancials({
     revenue,
     variableCosts,
     payroll: computePayrollCost(headcountResult.workforce),
     marketing: action.marketingBudget,
     rent: action.rentBudget,
-    admin: action.adminBudget + headcountResult.recruitmentCost + headcountResult.severanceCost,
+    admin: action.adminBudget + headcountResult.recruitmentCost + headcountResult.severanceCost + totalMaintenance,
     depreciation: 0,
     interest,
     taxRate: TAX_RATE,
-    capex: action.capex ?? 0,
+    // Le remboursement du principal immobilier est un mouvement de bilan
+    // (comme un remboursement de ligne de crédit), pas une charge P&L —
+    // regroupé avec le CAPEX, seul autre poste de cash-flow non-P&L du modèle.
+    capex: (action.capex ?? 0) + totalMortgagePrincipal,
     workingCapitalChange: 0,
   });
 
-  const businessBeforeCashFlow =
+  const businessWithPropertyPayments = { ...owned.business, properties: propertiesAfterPayments };
+
+  let businessBeforeCashFlow =
     action.capitalInjection && action.capitalInjection > 0
-      ? injectCapital(owned.business, action.capitalInjection)
-      : owned.business;
+      ? injectCapital(businessWithPropertyPayments, action.capitalInjection)
+      : businessWithPropertyPayments;
+
+  if (action.propertyPurchase) {
+    const spec = action.propertyPurchase;
+    const businessWithDownPayment = injectCapital(businessBeforeCashFlow, spec.downPaymentFromPersonalCash);
+    const mortgagePrincipal = spec.purchasePrice - spec.downPaymentFromPersonalCash;
+    const monthlyPayment = mortgagePrincipal > 0 ? computeMortgagePayment(mortgagePrincipal, spec.mortgageRateAnnual, spec.mortgageTermMonths) : 0;
+    const eligibility = evaluateFinancingEligibility({
+      downPayment: spec.downPaymentFromPersonalCash,
+      availableCash: businessWithDownPayment.treasury.cash,
+      monthlyPayment,
+      lastStatementEbitda: owned.lastStatement?.ebitda ?? null,
+    });
+    if (!eligibility.approved) {
+      throw new RangeError(`resolveBusinessMonth: achat immobilier refusé pour "${owned.business.name}" — ${eligibility.reason}`);
+    }
+    const { business: businessAfterPurchase } = purchaseProperty(
+      businessWithDownPayment,
+      spec,
+      `${owned.id}-property-${businessWithDownPayment.properties.length}`,
+    );
+    businessBeforeCashFlow = businessAfterPurchase;
+  }
+
   const { business, outcome } = applyMonthlyCashFlow(businessBeforeCashFlow, statement);
 
   return {

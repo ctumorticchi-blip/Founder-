@@ -47,6 +47,9 @@ function healthyBusinessAction(withCreation: boolean): MonthActions {
       {
         businessId: BUSINESS_ID,
         founderHoursAllocated: 150,
+        founderProspectionHoursAllocated: 0,
+        headcountCapacity: Number.POSITIVE_INFINITY,
+        storageCapacity: Number.POSITIVE_INFINITY,
         ...(withCreation
           ? {
               create: {
@@ -81,6 +84,9 @@ function ruinousBusinessAction(withCreation: boolean): MonthActions {
       {
         businessId: BUSINESS_ID,
         founderHoursAllocated: 150,
+        founderProspectionHoursAllocated: 0,
+        headcountCapacity: Number.POSITIVE_INFINITY,
+        storageCapacity: Number.POSITIVE_INFINITY,
         ...(withCreation
           ? {
               create: {

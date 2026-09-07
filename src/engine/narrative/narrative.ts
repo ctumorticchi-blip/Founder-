@@ -12,6 +12,11 @@ const MEMORABLE_EVENT_KINDS: ReadonlySet<GameEventKind> = new Set([
   "business-liquidated",
   "cash-crisis-warning",
   "capital-injected",
+  "business-note",
+  "property-purchased",
+  "business-listed-for-sale",
+  "sale-offer-received",
+  "business-sold",
 ]);
 
 /**

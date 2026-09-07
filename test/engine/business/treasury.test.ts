@@ -200,7 +200,7 @@ describe("applyMonthlyCashFlow — obligations impayées (spec de clôture M9.5)
     ];
 
     for (const fixture of fixtures) {
-      const business: BusinessState = { name: "Test", families: ["service"], treasury: fixture.treasury };
+      const business: BusinessState = { name: "Test", families: ["service"], treasury: fixture.treasury, properties: [] };
       // Avec BASE_INPUTS, netIncome est fixe (900) quel que soit workingCapitalChange
       // (qui n'entre en jeu qu'après impôt) : cashFlow = netIncome + depreciation - workingCapitalChange.
       const baseStatement = computeMonthlyFinancials(BASE_INPUTS);

@@ -28,6 +28,7 @@ export function CreateBusinessScreen({ family }: { readonly family: string }) {
   const [decisions, setDecisions] = useState<BusinessFamilyDecisions | null>(opportunity?.recommendedDecisions ?? null);
   const [headcount, setHeadcount] = useState(opportunity?.recommendedHeadcount ?? 0);
   const [marketingBudget, setMarketingBudget] = useState(opportunity?.recommendedMarketingBudget ?? 0);
+  const [prospectionHours, setProspectionHours] = useState(opportunity?.recommendedProspectionHours ?? 0);
   const [infrastructureId, setInfrastructureId] = useState(opportunity?.recommendedInfrastructureId ?? "domicile");
   const [adminOptionalIds, setAdminOptionalIds] = useState<readonly string[]>(opportunity?.recommendedAdminOptionalIds ?? []);
   const [purchases, setPurchases] = useState<readonly Purchase[]>(opportunity?.recommendedPurchases ?? []);
@@ -55,15 +56,20 @@ export function CreateBusinessScreen({ family }: { readonly family: string }) {
       activity,
       targetCustomers,
       decisions,
+      prospectionHours,
+      founderHoursAllocated: 0, // auto-alloué par START_BUSINESS (temps professionnel restant)
       marketingBudget,
       infrastructureId,
+      committedInfrastructureId: infrastructureId,
       adminOptionalIds,
       purchases,
       targetHeadcount: headcount > 0 ? headcount : null,
       capitalInjection: 0,
+      propertyPurchase: null,
+      saleDecision: null,
     };
     startBusiness(draft);
-    navigate({ screen: "business" });
+    navigate({ screen: "business", businessId: draft.businessId });
   };
 
   return (
@@ -91,6 +97,13 @@ export function CreateBusinessScreen({ family }: { readonly family: string }) {
       <div className="card stack">
         <div className="section-title">Paramètres de lancement</div>
         <DecisionFields decisions={decisions} onChange={setDecisions} />
+        <NumberField
+          label="Temps de prospection"
+          value={prospectionHours}
+          suffix="h/mois"
+          onChange={setProspectionHours}
+          hint="Le temps que vous consacrez à trouver des clients, en plus de la production."
+        />
         <NumberField label="Effectif au lancement" value={headcount} onChange={setHeadcount} hint="0 = vous démarrez seul(e)." />
         <NumberField label="Budget marketing" value={marketingBudget} suffix="€/mois" onChange={setMarketingBudget} />
       </div>

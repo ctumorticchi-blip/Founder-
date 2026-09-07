@@ -9,7 +9,7 @@ export function OpportunitiesScreen() {
   const gameState = state.gameState;
   if (!gameState) return null;
 
-  const hasBusiness = gameState.businesses.length > 0 || state.draft.business !== null;
+  const hasBusiness = state.draft.businesses.length > 0;
 
   return (
     <div className="stack">
@@ -21,7 +21,8 @@ export function OpportunitiesScreen() {
       {hasBusiness ? (
         <div className="card">
           <p className="text-sm text-secondary">
-            Vous gérez déjà une entreprise. Développez-la avant d'en lancer une nouvelle.
+            Une nouvelle entreprise partage votre temps de fondateur avec celles déjà lancées : assurez-vous d'avoir
+            les heures disponibles avant de vous lancer.
           </p>
         </div>
       ) : null}
@@ -34,8 +35,7 @@ export function OpportunitiesScreen() {
             <button
               key={opportunity.family}
               className="card card--interactive"
-              style={{ textAlign: "left", width: "100%", opacity: hasBusiness ? 0.5 : 1 }}
-              disabled={hasBusiness}
+              style={{ textAlign: "left", width: "100%" }}
               onClick={() => navigate({ screen: "createBusiness", family: opportunity.family })}
             >
               <div className="row row--between">

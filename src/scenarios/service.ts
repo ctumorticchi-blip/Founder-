@@ -54,6 +54,9 @@ export function buildServiceScenarioActions(monthIndex: number, state: GameState
   const businessAction: BusinessAction = {
     businessId: SERVICE_BUSINESS_ID,
     founderHoursAllocated: founderHours,
+    founderProspectionHoursAllocated: 0,
+    headcountCapacity: Number.POSITIVE_INFINITY,
+    storageCapacity: Number.POSITIVE_INFINITY,
     ...(existing
       ? {}
       : {

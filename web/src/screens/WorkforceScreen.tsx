@@ -4,13 +4,14 @@ import { NumberField } from "../components/ui/NumberField";
 import { StatTile } from "../components/ui/StatTile";
 import { Money } from "../components/ui/Money";
 
-export function WorkforceScreen() {
+export function WorkforceScreen({ businessId }: { readonly businessId: string }) {
   const { state, setTargetHeadcount } = useGame();
   const { navigate } = useNavigation();
   const gameState = state.gameState;
-  const business = gameState?.businesses.find((b) => b.id === state.draft.business?.businessId) ?? null;
+  const business = gameState?.businesses.find((b) => b.id === businessId) ?? null;
+  const draftBusiness = state.draft.businesses.find((b) => b.businessId === businessId) ?? null;
 
-  if (!gameState || !business || !state.draft.business) {
+  if (!gameState || !business || !draftBusiness) {
     return (
       <div className="empty-state">
         <p>Aucune entreprise à gérer.</p>
@@ -18,12 +19,12 @@ export function WorkforceScreen() {
     );
   }
 
-  const targetHeadcount = state.draft.business.targetHeadcount ?? business.workforce.headcount;
+  const targetHeadcount = draftBusiness.targetHeadcount ?? business.workforce.headcount;
   const delta = targetHeadcount - business.workforce.headcount;
 
   return (
     <div className="stack">
-      <button className="top-back" onClick={() => navigate({ screen: "business" })}>
+      <button className="top-back" onClick={() => navigate({ screen: "business", businessId })}>
         ← Entreprise
       </button>
       <h1 className="screen-title">Équipe</h1>
@@ -37,7 +38,7 @@ export function WorkforceScreen() {
       </div>
 
       <div className="card stack">
-        <NumberField label="Effectif cible pour ce mois" value={targetHeadcount} min={0} onChange={setTargetHeadcount} />
+        <NumberField label="Effectif cible pour ce mois" value={targetHeadcount} min={0} onChange={(value) => setTargetHeadcount(businessId, value)} />
         {delta !== 0 ? (
           <p className="text-sm text-secondary">
             {delta > 0 ? `Recrutement de ${delta} personne(s)` : `Licenciement de ${Math.abs(delta)} personne(s)`} — le coût réel sera visible dans le résultat du mois.

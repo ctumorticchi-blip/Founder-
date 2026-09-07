@@ -1,18 +1,24 @@
 import type { EconomicFamily, GameDate } from "@founder/engine";
 import { findOpportunity } from "../data/opportunities";
 import { defaultBusinessIdentity } from "../state/businessIdentity";
-import type { BusinessDraft, BusinessIdentity, SaveGameV1 } from "../state/types";
+import type { BusinessDraft, BusinessIdentity, MonthDraft, SaveGameV1 } from "../state/types";
 
 const STORAGE_KEY = "founder.save.v1";
 
 /**
- * Migration défensive au chargement (spec M11.1 §6.2) : une sauvegarde M10
- * n'a ni `businessIdentities`, ni la nouvelle forme de `BusinessDraft`
- * (`infrastructureId`/`adminOptionalIds`/`purchases`). On ne bump pas la
- * version — on synthétise en mémoire des valeurs par défaut lisibles,
- * jamais un crash. `gameState` (source de vérité moteur) n'est jamais
- * modifié : seules les structures web (`businessIdentities`, `draft`) le
- * sont. Idempotente : une sauvegarde déjà à jour traverse sans changement.
+ * Migration défensive au chargement (spec M11.1 §6.2, étendue M11.1.5 §9).
+ * Gère deux générations de sauvegardes plus anciennes que la forme actuelle,
+ * jamais un crash :
+ * - M10 : `BusinessDraft` sans catalogues (`rentBudget`/`adminBudget`/`capex`
+ *   bruts), `businessIdentities` absent, `draft.business` singulier.
+ * - M11.1 : `BusinessDraft` avec catalogues mais `draft.business` toujours
+ *   singulier (pas encore de portefeuille), sans `founderHoursAllocated`/
+ *   `prospectionHours`/`committedInfrastructureId`/`propertyPurchase`/
+ *   `saleDecision`, et `gameState` sans `properties`/`saleProcess`
+ *   (M11.1.5 §3-6). On ne bump pas la version — synthèse de valeurs par
+ *   défaut lisibles. `gameState` n'est modifié que pour compléter les
+ *   champs structurels manquants introduits par M11.1.5 (jamais pour
+ *   changer une valeur existante). Idempotente.
  */
 export function migrateSaveGame(raw: unknown): SaveGameV1 {
   const save = raw as SaveGameV1;
@@ -26,34 +32,56 @@ export function migrateSaveGame(raw: unknown): SaveGameV1 {
     }
   }
 
-  const legacyBusiness = save.draft.business as (BusinessDraft & { readonly infrastructureId?: string }) | null;
-  const business: BusinessDraft | null =
-    legacyBusiness && legacyBusiness.infrastructureId === undefined
-      ? migrateLegacyBusinessDraft(legacyBusiness, businessIdentities)
-      : legacyBusiness;
+  const gameState = {
+    ...save.gameState,
+    businesses: save.gameState.businesses.map((owned) => ({
+      ...owned,
+      business: { ...owned.business, properties: owned.business.properties ?? [] },
+      saleProcess: owned.saleProcess ?? null,
+    })),
+  };
+
+  const legacyDraft = save.draft as MonthDraft & { readonly business?: BusinessDraft | null };
+  const rawBusinesses: readonly BusinessDraft[] = legacyDraft.businesses ?? (legacyDraft.business ? [legacyDraft.business] : []);
+  const businesses = rawBusinesses.map((business) => migrateBusinessDraft(business, businessIdentities));
 
   return {
     ...save,
+    gameState,
     businessIdentities,
-    draft: { ...save.draft, business },
+    draft: { timeAllocation: save.draft.timeAllocation, job: save.draft.job, businesses },
   };
 }
 
-function migrateLegacyBusinessDraft(
-  legacy: BusinessDraft,
+function migrateBusinessDraft(
+  legacy: BusinessDraft & { readonly infrastructureId?: string; readonly founderHoursAllocated?: number },
   businessIdentities: Readonly<Record<string, BusinessIdentity>>,
 ): BusinessDraft {
   const identity = businessIdentities[legacy.businessId];
+  const hasCatalogFields = legacy.infrastructureId !== undefined;
   const recommendedInfrastructureId = findOpportunity(legacy.family)?.recommendedInfrastructureId ?? "domicile";
+
+  const base: BusinessDraft = hasCatalogFields
+    ? legacy
+    : {
+        ...legacy,
+        name: identity?.displayName ?? legacy.businessId,
+        description: identity?.description ?? "",
+        activity: identity?.activity ?? "",
+        targetCustomers: identity?.targetCustomers ?? "",
+        infrastructureId: recommendedInfrastructureId,
+        adminOptionalIds: [],
+        purchases: [],
+      };
+
   return {
-    ...legacy,
-    name: identity?.displayName ?? legacy.businessId,
-    description: identity?.description ?? "",
-    activity: identity?.activity ?? "",
-    targetCustomers: identity?.targetCustomers ?? "",
-    infrastructureId: recommendedInfrastructureId,
-    adminOptionalIds: [],
-    purchases: [],
+    ...base,
+    founderHoursAllocated: legacy.founderHoursAllocated ?? 0,
+    prospectionHours: (base as { readonly prospectionHours?: number }).prospectionHours ?? 0,
+    committedInfrastructureId:
+      (base as { readonly committedInfrastructureId?: string }).committedInfrastructureId ?? base.infrastructureId,
+    propertyPurchase: (base as { readonly propertyPurchase?: BusinessDraft["propertyPurchase"] }).propertyPurchase ?? null,
+    saleDecision: (base as { readonly saleDecision?: BusinessDraft["saleDecision"] }).saleDecision ?? null,
   };
 }
 

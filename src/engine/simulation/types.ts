@@ -6,6 +6,8 @@ import type { Market } from "../../types/market.js";
 import type { AggregateCompetition } from "../../types/competition.js";
 import type { MacroState } from "../../types/world.js";
 import type { GameEvent, MemoryEntry } from "../../types/narrative.js";
+import type { PropertyPurchaseSpec } from "../../types/realEstate.js";
+import type { SaleDecision, SaleProcessState } from "../../types/sale.js";
 
 /** État persistant propre à chaque famille, en plus de `BusinessState`/`WorkforceState` communs. */
 export type BusinessFamilyState =
@@ -50,6 +52,8 @@ export interface OwnedBusiness {
    * `simulateMonth`).
    */
   readonly lastStatement?: MonthlyFinancialStatement;
+  /** Processus de cession en cours (spec M11.1.5 §6.2). `null` = aucune cession en cours. */
+  readonly saleProcess: SaleProcessState | null;
 }
 
 export type CreateBusinessSpec =
@@ -111,8 +115,17 @@ export type CreateBusinessSpec =
  */
 export interface BusinessAction {
   readonly businessId: string;
-  /** Part des heures "business" du fondateur allouées à CETTE entreprise ce mois-ci. */
+  /** Part des heures "business" du fondateur allouées à CETTE entreprise ce mois-ci (capacité de production). */
   readonly founderHoursAllocated: number;
+  /**
+   * Heures de prospection du fondateur pour CETTE entreprise ce mois-ci
+   * (spec M11.1.5 §7.2). Compte contre le même budget global que
+   * `founderHoursAllocated` (voir `validateActions`) : la prospection n'est
+   * jamais un levier gratuit. Traduites en cible commerciale interne
+   * (`targetHours`/`targetMandates`/...) par le web avant l'appel, pas par
+   * le joueur directement (couche de traduction, spec §7.1).
+   */
+  readonly founderProspectionHoursAllocated: number;
   /** Fourni uniquement le mois de création de cette entreprise. */
   readonly create?: CreateBusinessSpec;
   /** Requis chaque mois où l'entreprise est active (création comprise). */
@@ -124,8 +137,22 @@ export interface BusinessAction {
   readonly capex?: number;
   /** Effectif cible ce mois-ci (recrutement/licenciement vers cette cible). Omis = effectif inchangé. */
   readonly targetHeadcount?: number;
+  /** Effectif salarié maximal permis par l'infrastructure choisie (spec M11.1.5 §3.2), calculé par le web. */
+  readonly headcountCapacity: number;
+  /** Stock maximal permis par l'infrastructure choisie (pertinent pour `retail`, spec M11.1.5 §3.2), calculé par le web. */
+  readonly storageCapacity: number;
   /** Apport de capital personnel dans cette entreprise ce mois-ci (spec : "sauvé par apport"). */
   readonly capitalInjection?: number;
+  /** Achat d'un bien immobilier professionnel ce mois-ci (spec M11.1.5 §4.3). */
+  readonly propertyPurchase?: PropertyPurchaseSpec;
+  /** Décision du joueur sur un processus de cession en cours, ou lancement d'un nouveau (spec M11.1.5 §6.2). */
+  readonly saleDecision?: SaleDecision;
+  /**
+   * Texte libre relayé verbatim comme `GameEvent` de type `business-note`
+   * (spec M11.1.5 §3.3) : passe-plat narratif générique, le moteur ne
+   * l'interprète jamais.
+   */
+  readonly note?: string;
 }
 
 /** État complet du monde simulé (Truth) à une date donnée. */
