@@ -32,6 +32,7 @@ export function DashboardScreen() {
   const remaining = remainingHours(state.draft);
   const topSkills = [...SKILL_NAMES].sort((a, b) => gameState.character.skills[b] - gameState.character.skills[a]).slice(0, 3);
   const business = gameState.businesses[0] ?? null;
+  const businessIdentity = business ? state.businessIdentities[business.id] : undefined;
   const opportunityMarketIds = Object.entries(gameState.markets)
     .filter(([marketId, market]) => detectMarketInefficiency(market, gameState.competitions[marketId]!))
     .map(([marketId]) => marketId);
@@ -77,7 +78,7 @@ export function DashboardScreen() {
         {business ? (
           <div className="stack stack--tight">
             <div className="row row--between">
-              <strong>{FAMILY_LABELS[business.familyState.family] ?? business.familyState.family}</strong>
+              <strong>{businessIdentity?.displayName ?? FAMILY_LABELS[business.familyState.family] ?? business.familyState.family}</strong>
               {business.business.treasury.isInsolvent ? <span className="pill pill--danger">Insolvable</span> : null}
             </div>
             <div className="grid-2">

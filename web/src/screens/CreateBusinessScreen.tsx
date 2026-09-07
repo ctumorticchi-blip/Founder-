@@ -1,26 +1,38 @@
 import { useState } from "react";
 import type { BusinessFamilyDecisions, CreateBusinessSpec } from "@founder/engine";
-import { findOpportunity } from "../data/opportunities";
+import { findOpportunity, type RecommendedCreateSpec } from "../data/opportunities";
 import { useGame } from "../state/GameProvider";
 import { useNavigation } from "../state/Navigation";
 import { generateBusinessId } from "../lib/ids";
 import { NumberField } from "../components/ui/NumberField";
+import { TextField } from "../components/ui/TextField";
 import { DecisionFields } from "../components/business/DecisionFields";
-import type { BusinessDraft } from "../state/types";
-
-type Budgets = { marketingBudget: number; rentBudget: number; adminBudget: number; capex: number };
+import { InfrastructurePicker } from "../components/business/InfrastructurePicker";
+import { AdminBreakdown } from "../components/business/AdminBreakdown";
+import { CapexPicker } from "../components/business/CapexPicker";
+import type { BusinessDraft, Purchase } from "../state/types";
 
 export function CreateBusinessScreen({ family }: { readonly family: string }) {
   const opportunity = findOpportunity(family);
   const { startBusiness } = useGame();
   const { navigate } = useNavigation();
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [createSpec, setCreateSpec] = useState<CreateBusinessSpec | null>(opportunity?.recommendedCreateSpec ?? null);
-  const [decisions, setDecisions] = useState<BusinessFamilyDecisions | null>(opportunity?.recommendedDecisions ?? null);
-  const [budgets, setBudgets] = useState<Budgets | null>(opportunity?.recommendedBudgets ?? null);
-  const [headcount, setHeadcount] = useState(opportunity?.recommendedHeadcount ?? 0);
 
-  if (!opportunity || !createSpec || !decisions || !budgets) {
+  const [name, setName] = useState(opportunity?.defaultName ?? "");
+  const [description, setDescription] = useState(opportunity?.pitch ?? "");
+  const [activity, setActivity] = useState(opportunity?.defaultActivity ?? "");
+  const [targetCustomers, setTargetCustomers] = useState(opportunity?.defaultTargetCustomers ?? "");
+  const [salaryAndCredit, setSalaryAndCredit] = useState<RecommendedCreateSpec | null>(
+    opportunity?.recommendedCreateSpec ?? null,
+  );
+  const [decisions, setDecisions] = useState<BusinessFamilyDecisions | null>(opportunity?.recommendedDecisions ?? null);
+  const [headcount, setHeadcount] = useState(opportunity?.recommendedHeadcount ?? 0);
+  const [marketingBudget, setMarketingBudget] = useState(opportunity?.recommendedMarketingBudget ?? 0);
+  const [infrastructureId, setInfrastructureId] = useState(opportunity?.recommendedInfrastructureId ?? "domicile");
+  const [adminOptionalIds, setAdminOptionalIds] = useState<readonly string[]>(opportunity?.recommendedAdminOptionalIds ?? []);
+  const [purchases, setPurchases] = useState<readonly Purchase[]>(opportunity?.recommendedPurchases ?? []);
+
+  if (!opportunity || !salaryAndCredit || !decisions) {
     return (
       <div className="empty-state">
         <p>Opportunité introuvable.</p>
@@ -28,17 +40,25 @@ export function CreateBusinessScreen({ family }: { readonly family: string }) {
     );
   }
 
+  const nameIsValid = name.trim().length > 0;
+
   const handleCreate = () => {
+    if (!nameIsValid) return;
+    const createSpec = { ...salaryAndCredit, family: opportunity.family, name: name.trim(), marketId: opportunity.market.id } as CreateBusinessSpec;
     const draft: BusinessDraft = {
       businessId: generateBusinessId(opportunity.family),
       family: opportunity.family,
       isNew: true,
-      createSpec: { ...createSpec, marketId: opportunity.market.id },
+      createSpec,
+      name: name.trim(),
+      description,
+      activity,
+      targetCustomers,
       decisions,
-      marketingBudget: budgets.marketingBudget,
-      rentBudget: budgets.rentBudget,
-      adminBudget: budgets.adminBudget,
-      capex: budgets.capex,
+      marketingBudget,
+      infrastructureId,
+      adminOptionalIds,
+      purchases,
       targetHeadcount: headcount > 0 ? headcount : null,
       capitalInjection: 0,
     };
@@ -60,14 +80,31 @@ export function CreateBusinessScreen({ family }: { readonly family: string }) {
       </div>
 
       <div className="card stack">
+        <div className="section-title">Identité de l'entreprise</div>
+        <TextField label="Nom commercial" value={name} onChange={setName} required hint="Le nom qui apparaîtra partout dans le jeu." />
+        {!nameIsValid ? <span className="text-sm" style={{ color: "var(--danger)" }}>Le nom est obligatoire.</span> : null}
+        <TextField label="Description" value={description} onChange={setDescription} />
+        <TextField label="Activité" value={activity} onChange={setActivity} />
+        <TextField label="Clientèle cible" value={targetCustomers} onChange={setTargetCustomers} />
+      </div>
+
+      <div className="card stack">
         <div className="section-title">Paramètres de lancement</div>
         <DecisionFields decisions={decisions} onChange={setDecisions} />
         <NumberField label="Effectif au lancement" value={headcount} onChange={setHeadcount} hint="0 = vous démarrez seul(e)." />
-        <NumberField label="Budget marketing" value={budgets.marketingBudget} suffix="€/mois" onChange={(marketingBudget) => setBudgets({ ...budgets, marketingBudget })} />
-        <NumberField label="Loyer" value={budgets.rentBudget} suffix="€/mois" onChange={(rentBudget) => setBudgets({ ...budgets, rentBudget })} />
-        {budgets.capex > 0 ? (
-          <NumberField label="Investissement de lancement" value={budgets.capex} suffix="€, une fois" onChange={(capex) => setBudgets({ ...budgets, capex })} />
-        ) : null}
+        <NumberField label="Budget marketing" value={marketingBudget} suffix="€/mois" onChange={setMarketingBudget} />
+      </div>
+
+      <div className="card">
+        <InfrastructurePicker family={opportunity.family} selectedId={infrastructureId} isNew onChange={setInfrastructureId} />
+      </div>
+
+      <div className="card">
+        <AdminBreakdown optionalIds={adminOptionalIds} onChange={setAdminOptionalIds} />
+      </div>
+
+      <div className="card">
+        <CapexPicker purchases={purchases} onChange={setPurchases} />
       </div>
 
       <button className="btn btn--ghost" onClick={() => setShowAdvanced((value) => !value)}>
@@ -76,25 +113,29 @@ export function CreateBusinessScreen({ family }: { readonly family: string }) {
 
       {showAdvanced ? (
         <div className="card stack">
-          <NumberField label="Ligne de crédit" value={createSpec.creditLineLimit} suffix="€" onChange={(creditLineLimit) => setCreateSpec({ ...createSpec, creditLineLimit })} />
+          <NumberField
+            label="Ligne de crédit"
+            value={salaryAndCredit.creditLineLimit}
+            suffix="€"
+            onChange={(creditLineLimit) => setSalaryAndCredit({ ...salaryAndCredit, creditLineLimit })}
+          />
           <NumberField
             label="Taux d'intérêt annuel"
-            value={createSpec.creditLineInterestRateAnnual}
+            value={salaryAndCredit.creditLineInterestRateAnnual}
             step={0.01}
             hint="Ex. 0,08 = 8 %/an"
-            onChange={(creditLineInterestRateAnnual) => setCreateSpec({ ...createSpec, creditLineInterestRateAnnual })}
+            onChange={(creditLineInterestRateAnnual) => setSalaryAndCredit({ ...salaryAndCredit, creditLineInterestRateAnnual })}
           />
-          <NumberField label="Budget administratif" value={budgets.adminBudget} suffix="€/mois" onChange={(adminBudget) => setBudgets({ ...budgets, adminBudget })} />
           <NumberField
             label="Salaire mensuel moyen"
-            value={createSpec.averageMonthlySalary}
+            value={salaryAndCredit.averageMonthlySalary}
             suffix="€/salarié"
-            onChange={(averageMonthlySalary) => setCreateSpec({ ...createSpec, averageMonthlySalary })}
+            onChange={(averageMonthlySalary) => setSalaryAndCredit({ ...salaryAndCredit, averageMonthlySalary })}
           />
         </div>
       ) : null}
 
-      <button className="btn btn--primary" onClick={handleCreate}>
+      <button className="btn btn--primary" onClick={handleCreate} disabled={!nameIsValid}>
         Lancer l'entreprise
       </button>
     </div>

@@ -1,6 +1,9 @@
 import { useGame } from "../state/GameProvider";
 import { useNavigation } from "../state/Navigation";
 import { DecisionFields } from "../components/business/DecisionFields";
+import { InfrastructurePicker } from "../components/business/InfrastructurePicker";
+import { AdminBreakdown } from "../components/business/AdminBreakdown";
+import { CapexPicker } from "../components/business/CapexPicker";
 import { NumberField } from "../components/ui/NumberField";
 import { RangeField } from "../components/ui/RangeField";
 import { StatTile } from "../components/ui/StatTile";
@@ -17,7 +20,16 @@ const FAMILY_LABELS: Record<string, string> = {
 };
 
 export function BusinessScreen() {
-  const { state, updateDecisions, updateBudgets, setCapitalInjection, setTimeAllocation } = useGame();
+  const {
+    state,
+    updateDecisions,
+    setMarketingBudget,
+    setInfrastructure,
+    setAdminOptionalIds,
+    setPurchases,
+    setCapitalInjection,
+    setTimeAllocation,
+  } = useGame();
   const { navigate } = useNavigation();
   const gameState = state.gameState;
   if (!gameState) return null;
@@ -41,16 +53,17 @@ export function BusinessScreen() {
   }
 
   const treasury = business?.business.treasury ?? null;
+  const identity = state.businessIdentities[draftBusiness.businessId];
 
   return (
     <div className="stack">
       <div className="row row--between">
         <h1 className="screen-title" style={{ marginBottom: 0 }}>
-          {FAMILY_LABELS[draftBusiness.family] ?? draftBusiness.family}
+          {identity?.displayName ?? "Mon entreprise"}
         </h1>
         {treasury?.isInsolvent ? <span className="pill pill--danger">Insolvable</span> : null}
       </div>
-      <p className="screen-subtitle">{draftBusiness.businessId}</p>
+      <p className="screen-subtitle">{FAMILY_LABELS[draftBusiness.family] ?? draftBusiness.family}</p>
 
       {!business ? (
         <div className="card">
@@ -129,10 +142,24 @@ export function BusinessScreen() {
       <div className="card stack">
         <div className="section-title">Décisions du mois</div>
         <DecisionFields decisions={draftBusiness.decisions} onChange={updateDecisions} />
-        <NumberField label="Budget marketing" value={draftBusiness.marketingBudget} suffix="€/mois" onChange={(marketingBudget) => updateBudgets({ marketingBudget })} />
-        <NumberField label="Loyer" value={draftBusiness.rentBudget} suffix="€/mois" onChange={(rentBudget) => updateBudgets({ rentBudget })} />
-        <NumberField label="Administratif" value={draftBusiness.adminBudget} suffix="€/mois" onChange={(adminBudget) => updateBudgets({ adminBudget })} />
-        <NumberField label="Investissement ponctuel" value={draftBusiness.capex} suffix="€" onChange={(capex) => updateBudgets({ capex })} />
+        <NumberField label="Budget marketing" value={draftBusiness.marketingBudget} suffix="€/mois" onChange={setMarketingBudget} />
+      </div>
+
+      <div className="card">
+        <InfrastructurePicker
+          family={draftBusiness.family}
+          selectedId={draftBusiness.infrastructureId}
+          isNew={draftBusiness.isNew}
+          onChange={setInfrastructure}
+        />
+      </div>
+
+      <div className="card">
+        <AdminBreakdown optionalIds={draftBusiness.adminOptionalIds} onChange={setAdminOptionalIds} />
+      </div>
+
+      <div className="card">
+        <CapexPicker purchases={draftBusiness.purchases} onChange={setPurchases} />
       </div>
 
       <div className="card stack">

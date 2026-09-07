@@ -31,6 +31,9 @@ export function createBusiness(
   families: readonly EconomicFamily[],
   financing: CreateBusinessFinancing,
 ): BusinessState {
+  if (name.trim().length === 0) {
+    throw new RangeError("createBusiness: name ne peut pas être vide ou blanc.");
+  }
   if (families.length === 0) {
     throw new RangeError("createBusiness: une entreprise doit activer au moins une famille économique.");
   }

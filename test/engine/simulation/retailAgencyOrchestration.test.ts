@@ -23,6 +23,7 @@ function retailCreationActions(founderHours: number): MonthActions {
         founderHoursAllocated: founderHours,
         create: {
           family: "retail",
+          name: "Fleur Co",
           marketId: RETAIL_MARKET.id,
           unitCostOfGoods: 6,
           averageMonthlySalary: 1_800,
@@ -72,6 +73,7 @@ function agencyCreationActions(founderHours: number): MonthActions {
         founderHoursAllocated: founderHours,
         create: {
           family: "agency",
+          name: "Conseil Co",
           marketId: AGENCY_MARKET.id,
           averageMonthlyFeePerMandate: 6_000,
           deliveryCostRatio: 0.2,

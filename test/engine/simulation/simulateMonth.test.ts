@@ -36,6 +36,7 @@ function createServiceAction(overrides: Partial<BusinessAction> = {}): BusinessA
     founderHoursAllocated: 140,
     create: {
       family: "service",
+      name: "Clean Co",
       marketId: MARKET.id,
       costPerLaborHour: 5,
       averageMonthlySalary: 2_000,
@@ -106,8 +107,22 @@ describe("simulateMonth", () => {
     const next = simulateMonth(state, actions, SEED);
     expect(next.businesses).toHaveLength(1);
     expect(next.businesses[0]?.id).toBe("clean-co");
+    expect(next.businesses[0]?.business.name).toBe("Clean Co");
     expect(next.events.some((e) => e.kind === "business-created")).toBe(true);
     expect(next.memory.some((e) => e.kind === "business-created")).toBe(true);
+  });
+
+  it("le message de création référence le nom commercial, pas l'id technique (spec M11.1)", () => {
+    const state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [MARKET]);
+    const actions: MonthActions = {
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 140, reseau: 0 },
+      jobHourlyWage: null,
+      businessActions: [createServiceAction()],
+    };
+    const next = simulateMonth(state, actions, SEED);
+    const createdEvent = next.events.find((e) => e.kind === "business-created");
+    expect(createdEvent?.message).toContain("Clean Co");
+    expect(createdEvent?.message).not.toContain("clean-co");
   });
 
   it("exige des décisions pour toute entreprise créée ou active ce mois-ci", () => {
@@ -121,6 +136,7 @@ describe("simulateMonth", () => {
           founderHoursAllocated: 140,
           create: {
             family: "service",
+            name: "Clean Co",
             marketId: MARKET.id,
             costPerLaborHour: 5,
             averageMonthlySalary: 2_000,
@@ -206,6 +222,7 @@ describe("simulateMonth", () => {
         createServiceAction({
           create: {
             family: "service",
+            name: "Clean Co",
             marketId: MARKET.id,
             costPerLaborHour: 100,
             averageMonthlySalary: 2_000,

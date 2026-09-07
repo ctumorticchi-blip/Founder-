@@ -48,6 +48,7 @@ export function buildSubscriptionScenarioActions(monthIndex: number, state: Game
       ? {
           create: {
             family: "subscription",
+            name: "Subscription Co",
             marketId: SUBSCRIPTION_MARKET.id,
             arpu: 29,
             churnRateBase: 0.04,

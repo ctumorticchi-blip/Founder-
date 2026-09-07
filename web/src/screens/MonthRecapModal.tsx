@@ -31,7 +31,7 @@ export function MonthRecapModal({ recap }: { readonly recap: MonthRecap }) {
             <div className="section-title">Entreprises</div>
             {recap.businessSummaries.map((summary) => (
               <div className="row row--between" key={summary.id}>
-                <span className="text-sm">{summary.id}</span>
+                <span className="text-sm">{summary.displayName}</span>
                 <span className="text-sm">
                   CA <Money amount={summary.revenue} /> · résultat <Money amount={summary.netIncome} signed />
                 </span>

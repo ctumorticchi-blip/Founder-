@@ -5,6 +5,7 @@ import type { BusinessAction, CreateBusinessSpec } from "../../../src/engine/sim
 
 const SERVICE_SPEC: CreateBusinessSpec = {
   family: "service",
+  name: "Test Service",
   marketId: "market-1",
   costPerLaborHour: 8,
   averageMonthlySalary: 2_000,
@@ -14,6 +15,7 @@ const SERVICE_SPEC: CreateBusinessSpec = {
 
 const SUBSCRIPTION_SPEC: CreateBusinessSpec = {
   family: "subscription",
+  name: "Test Subscription",
   marketId: "market-2",
   arpu: 29,
   churnRateBase: 0.04,
@@ -38,6 +40,15 @@ function serviceAction(overrides: Partial<BusinessAction> = {}): BusinessAction 
     ...overrides,
   };
 }
+
+describe("createOwnedBusiness — identité (spec M11.1)", () => {
+  it("le nom de l'entreprise créée est le nom commercial fourni, pas l'id technique", () => {
+    const owned = createOwnedBusiness("service-abc123", SERVICE_SPEC);
+    expect(owned.id).toBe("service-abc123");
+    expect(owned.business.name).toBe("Test Service");
+    expect(owned.business.name).not.toBe(owned.id);
+  });
+});
 
 describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
   it("plus de salariés -> plus d'heures vendues -> plus de revenu (à demande capacity-bound)", () => {

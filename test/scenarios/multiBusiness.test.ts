@@ -32,6 +32,7 @@ describe("multi-entreprises", () => {
           founderHoursAllocated: 50,
           create: {
             family: "service",
+            name: "Svc",
             marketId: SERVICE_MARKET.id,
             costPerLaborHour: 8,
             averageMonthlySalary: 2_000,
@@ -48,6 +49,7 @@ describe("multi-entreprises", () => {
           founderHoursAllocated: 50,
           create: {
             family: "hospitality",
+            name: "Resto",
             marketId: HOSPITALITY_MARKET.id,
             foodCostPerCover: 9,
             averageMonthlySalary: 2_000,
@@ -66,6 +68,7 @@ describe("multi-entreprises", () => {
           founderHoursAllocated: 50,
           create: {
             family: "subscription",
+            name: "Saas",
             marketId: SUBSCRIPTION_MARKET.id,
             arpu: 29,
             churnRateBase: 0.04,
@@ -109,6 +112,7 @@ describe("multi-entreprises", () => {
         ? {
             create: {
               family: "service" as const,
+              name: "Svc",
               marketId: SERVICE_MARKET.id,
               costPerLaborHour: 8,
               averageMonthlySalary: 2_000,
@@ -130,6 +134,7 @@ describe("multi-entreprises", () => {
         ? {
             create: {
               family: "hospitality" as const,
+              name: "Resto",
               marketId: HOSPITALITY_MARKET.id,
               foodCostPerCover: 200,
               averageMonthlySalary: 2_000,
@@ -187,6 +192,7 @@ describe("multi-entreprises", () => {
           founderHoursAllocated: 30,
           create: {
             family: "service",
+            name: "Svc",
             marketId: SERVICE_MARKET.id,
             costPerLaborHour: 8,
             averageMonthlySalary: 2_000,
@@ -203,6 +209,7 @@ describe("multi-entreprises", () => {
           founderHoursAllocated: 30,
           create: {
             family: "hospitality",
+            name: "Resto",
             marketId: HOSPITALITY_MARKET.id,
             foodCostPerCover: 9,
             averageMonthlySalary: 2_000,
@@ -220,6 +227,7 @@ describe("multi-entreprises", () => {
           founderHoursAllocated: 30,
           create: {
             family: "subscription",
+            name: "Saas",
             marketId: SUBSCRIPTION_MARKET.id,
             arpu: 29,
             churnRateBase: 0.04,
@@ -239,6 +247,7 @@ describe("multi-entreprises", () => {
           founderHoursAllocated: 30,
           create: {
             family: "retail",
+            name: "Fleur",
             marketId: RETAIL_MARKET.id,
             unitCostOfGoods: 6,
             averageMonthlySalary: 1_800,
@@ -255,6 +264,7 @@ describe("multi-entreprises", () => {
           founderHoursAllocated: 30,
           create: {
             family: "agency",
+            name: "Conseil",
             marketId: AGENCY_MARKET.id,
             averageMonthlyFeePerMandate: 4_000,
             deliveryCostRatio: 0.3,

@@ -27,6 +27,7 @@ describe("impossibilité de dépenses sans source de financement", () => {
           founderHoursAllocated: 150,
           create: {
             family: "service",
+            name: "Svc",
             marketId: SERVICE_MARKET.id,
             costPerLaborHour: 8,
             averageMonthlySalary: 2_000,
@@ -56,6 +57,7 @@ describe("impossibilité de dépenses sans source de financement", () => {
           founderHoursAllocated: 50,
           create: {
             family: "service",
+            name: "Svc",
             marketId: SERVICE_MARKET.id,
             costPerLaborHour: 8,
             averageMonthlySalary: 2_000,
@@ -95,6 +97,7 @@ describe("impossibilité de dépenses sans source de financement", () => {
           founderHoursAllocated: 75,
           create: {
             family: "service",
+            name: "Svc A",
             marketId: SERVICE_MARKET.id,
             costPerLaborHour: 8,
             averageMonthlySalary: 2_000,
@@ -112,6 +115,7 @@ describe("impossibilité de dépenses sans source de financement", () => {
           founderHoursAllocated: 75,
           create: {
             family: "service",
+            name: "Svc B",
             marketId: SERVICE_MARKET.id,
             costPerLaborHour: 8,
             averageMonthlySalary: 2_000,

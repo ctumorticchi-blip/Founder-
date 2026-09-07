@@ -120,7 +120,7 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
       events.push({
         kind: "capital-injected",
         date: nextDate,
-        message: `Apport personnel de ${action.capitalInjection} dans "${action.businessId}".`,
+        message: `Apport personnel de ${action.capitalInjection} dans "${owned.business.name}".`,
       });
     }
 
@@ -131,7 +131,7 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
       events.push({
         kind: "business-created",
         date: nextDate,
-        message: `Création de l'entreprise "${owned.id}" (${action.create!.family}).`,
+        message: `Création de l'entreprise "${owned.business.name}" (${action.create!.family}).`,
       });
     }
 
@@ -139,14 +139,14 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
       events.push({
         kind: "business-liquidated",
         date: nextDate,
-        message: `Liquidation forcée de "${owned.id}" après ${resolved.updated.business.treasury.consecutiveUnpaidMonths} mois d'obligations impayées (solde dû : ${Math.round(resolved.updated.business.treasury.unpaidObligations)}).`,
+        message: `Liquidation forcée de "${resolved.updated.business.name}" après ${resolved.updated.business.treasury.consecutiveUnpaidMonths} mois d'obligations impayées (solde dû : ${Math.round(resolved.updated.business.treasury.unpaidObligations)}).`,
       });
     } else {
       if (resolved.updated.business.treasury.consecutiveUnpaidMonths === INSOLVENCY_THRESHOLD_MONTHS - 1) {
         events.push({
           kind: "cash-crisis-warning",
           date: nextDate,
-          message: `"${owned.id}" : obligations impayées depuis plusieurs mois (solde dû : ${Math.round(resolved.updated.business.treasury.unpaidObligations)}), liquidation proche si rien ne change.`,
+          message: `"${resolved.updated.business.name}" : obligations impayées depuis plusieurs mois (solde dû : ${Math.round(resolved.updated.business.treasury.unpaidObligations)}), liquidation proche si rien ne change.`,
         });
       }
       businesses.push(resolved.updated);

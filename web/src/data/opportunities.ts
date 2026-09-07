@@ -6,6 +6,13 @@ import {
   SERVICE_MARKET,
   SUBSCRIPTION_MARKET,
 } from "@founder/scenarios/markets.js";
+import type { Purchase } from "../state/types";
+
+/** Omit distributif : préserve les variantes discriminées de `CreateBusinessSpec` (un `Omit` simple les aplatit). */
+type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
+
+/** `CreateBusinessSpec` sans `name` : le nom vient du choix du joueur, ajouté par `CreateBusinessScreen`. */
+export type RecommendedCreateSpec = DistributiveOmit<CreateBusinessSpec, "name">;
 
 /**
  * Catalogue d'opportunités proposées au joueur (spec M10 : "découvrir des
@@ -14,6 +21,11 @@ import {
  * les vertical slices testées) ; seuls le texte et les valeurs de départ
  * recommandées sont propres à l'UI — aucune logique économique ici, juste
  * des paramètres d'entrée pour `createBusiness`/`simulateMonth`.
+ *
+ * M11.1 : les recommandations de lieu de travail/administratif/investissement
+ * pointent vers les catalogues `infrastructure.ts`/`adminServices.ts`/
+ * `capexCatalog.ts` (choix d'entrepreneur) ; `defaultName` pré-remplit le nom
+ * commercial, toujours éditable par le joueur dans `CreateBusinessScreen`.
  */
 export interface Opportunity {
   readonly family: CreateBusinessSpec["family"];
@@ -21,15 +33,17 @@ export interface Opportunity {
   readonly pitch: string;
   readonly icon: string;
   readonly market: Market;
-  readonly recommendedCreateSpec: CreateBusinessSpec;
+  /** Nom commercial par défaut, pré-rempli dans `CreateBusinessScreen` (éditable par le joueur). */
+  readonly defaultName: string;
+  readonly defaultActivity: string;
+  readonly defaultTargetCustomers: string;
+  readonly recommendedCreateSpec: RecommendedCreateSpec;
   readonly recommendedDecisions: BusinessFamilyDecisions;
   readonly recommendedHeadcount: number;
-  readonly recommendedBudgets: {
-    readonly marketingBudget: number;
-    readonly rentBudget: number;
-    readonly adminBudget: number;
-    readonly capex: number;
-  };
+  readonly recommendedMarketingBudget: number;
+  readonly recommendedInfrastructureId: string;
+  readonly recommendedAdminOptionalIds: readonly string[];
+  readonly recommendedPurchases: readonly Purchase[];
 }
 
 export const OPPORTUNITIES: readonly Opportunity[] = [
@@ -39,6 +53,9 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     pitch: "Peu de capital pour démarrer. Vous vendez vos heures, puis celles de vos salariés.",
     icon: "🧹",
     market: SERVICE_MARKET,
+    defaultName: "Clean & Co",
+    defaultActivity: "Prestations de nettoyage pour particuliers et professionnels.",
+    defaultTargetCustomers: "Particuliers et petites entreprises locales.",
     recommendedCreateSpec: {
       family: "service",
       marketId: SERVICE_MARKET.id,
@@ -49,7 +66,10 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     },
     recommendedDecisions: { family: "service", price: 45, targetHours: 400 },
     recommendedHeadcount: 0,
-    recommendedBudgets: { marketingBudget: 300, rentBudget: 400, adminBudget: 150, capex: 0 },
+    recommendedMarketingBudget: 300,
+    recommendedInfrastructureId: "domicile",
+    recommendedAdminOptionalIds: [],
+    recommendedPurchases: [],
   },
   {
     family: "hospitality",
@@ -57,6 +77,9 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     pitch: "Capital de lancement plus élevé (aménagement) et personnel dès l'ouverture.",
     icon: "🍽️",
     market: HOSPITALITY_MARKET,
+    defaultName: "Café des Artisans",
+    defaultActivity: "Café-restaurant de quartier.",
+    defaultTargetCustomers: "Habitants et travailleurs du quartier.",
     recommendedCreateSpec: {
       family: "hospitality",
       marketId: HOSPITALITY_MARKET.id,
@@ -67,7 +90,10 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     },
     recommendedDecisions: { family: "hospitality", averageTicketPrice: 26, expectedDemandCovers: 1_500 },
     recommendedHeadcount: 3,
-    recommendedBudgets: { marketingBudget: 300, rentBudget: 1_500, adminBudget: 200, capex: 40_000 },
+    recommendedMarketingBudget: 300,
+    recommendedInfrastructureId: "petit-bureau",
+    recommendedAdminOptionalIds: ["conformite"],
+    recommendedPurchases: [{ itemId: "materiel-pro", quantity: 1 }, { itemId: "amenagement", quantity: 1 }],
   },
   {
     family: "subscription",
@@ -75,6 +101,9 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     pitch: "Croissance par acquisition de clients ; attention au churn et au support.",
     icon: "💻",
     market: SUBSCRIPTION_MARKET,
+    defaultName: "Nimbus SaaS",
+    defaultActivity: "Logiciel en ligne par abonnement.",
+    defaultTargetCustomers: "Petites entreprises et indépendants.",
     recommendedCreateSpec: {
       family: "subscription",
       marketId: SUBSCRIPTION_MARKET.id,
@@ -88,7 +117,10 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     },
     recommendedDecisions: { family: "subscription", newSubscribers: 40 },
     recommendedHeadcount: 0,
-    recommendedBudgets: { marketingBudget: 500, rentBudget: 300, adminBudget: 200, capex: 0 },
+    recommendedMarketingBudget: 500,
+    recommendedInfrastructureId: "domicile",
+    recommendedAdminOptionalIds: ["logiciels"],
+    recommendedPurchases: [{ itemId: "ordinateur", quantity: 1 }],
   },
   {
     family: "retail",
@@ -96,6 +128,9 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     pitch: "Vous achetez du stock et le revendez ; le trafic client fait la différence.",
     icon: "🌷",
     market: RETAIL_MARKET,
+    defaultName: "Boutique Fleur de Ville",
+    defaultActivity: "Vente au détail en boutique physique.",
+    defaultTargetCustomers: "Particuliers du quartier, passage à pied.",
     recommendedCreateSpec: {
       family: "retail",
       marketId: RETAIL_MARKET.id,
@@ -106,7 +141,10 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     },
     recommendedDecisions: { family: "retail", unitPrice: 15, stockUnits: 600, expectedFootTraffic: 2_500 },
     recommendedHeadcount: 0,
-    recommendedBudgets: { marketingBudget: 200, rentBudget: 500, adminBudget: 100, capex: 0 },
+    recommendedMarketingBudget: 200,
+    recommendedInfrastructureId: "petit-bureau",
+    recommendedAdminOptionalIds: [],
+    recommendedPurchases: [{ itemId: "mobilier", quantity: 1 }],
   },
   {
     family: "agency",
@@ -114,6 +152,9 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     pitch: "Vous vendez des mandats ; votre réputation et votre équipe font la capacité.",
     icon: "📈",
     market: AGENCY_MARKET,
+    defaultName: "Agence Horizon",
+    defaultActivity: "Conseil et prestations marketing pour entreprises.",
+    defaultTargetCustomers: "PME en recherche de croissance.",
     recommendedCreateSpec: {
       family: "agency",
       marketId: AGENCY_MARKET.id,
@@ -125,7 +166,10 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     },
     recommendedDecisions: { family: "agency", targetMandates: 20 },
     recommendedHeadcount: 0,
-    recommendedBudgets: { marketingBudget: 300, rentBudget: 400, adminBudget: 150, capex: 0 },
+    recommendedMarketingBudget: 300,
+    recommendedInfrastructureId: "coworking",
+    recommendedAdminOptionalIds: [],
+    recommendedPurchases: [{ itemId: "ordinateur", quantity: 1 }],
   },
 ];
 

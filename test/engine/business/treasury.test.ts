@@ -39,6 +39,16 @@ describe("createBusiness", () => {
     expect(() => createBusiness("Test", ["service"], { creditLineLimit: -1, creditLineInterestRateAnnual: 0 })).toThrow(RangeError);
     expect(() => createBusiness("Test", ["service"], { creditLineLimit: 0, creditLineInterestRateAnnual: -0.1 })).toThrow(RangeError);
   });
+
+  it("conserve le nom commercial fourni (spec M11.1 : identité réelle, pas un id technique)", () => {
+    const business = createBusiness("Ma Petite Entreprise", ["service"], NO_FINANCING);
+    expect(business.name).toBe("Ma Petite Entreprise");
+  });
+
+  it("rejette un nom vide ou blanc", () => {
+    expect(() => createBusiness("", ["service"], NO_FINANCING)).toThrow(RangeError);
+    expect(() => createBusiness("   ", ["service"], NO_FINANCING)).toThrow(RangeError);
+  });
 });
 
 describe("computeMonthlyInterest", () => {

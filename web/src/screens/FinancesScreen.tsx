@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useGame } from "../state/GameProvider";
 import { StatTile } from "../components/ui/StatTile";
 import { Money } from "../components/ui/Money";
+import { findInfrastructureOption } from "../data/infrastructure";
+import { ADMIN_COMPONENTS, requiredAdminComponents } from "../data/adminServices";
 
 export function FinancesScreen() {
   const { state } = useGame();
@@ -11,6 +13,12 @@ export function FinancesScreen() {
 
   const business = gameState.businesses[0] ?? null;
   const statement = business?.lastStatement ?? null;
+  const identity = business ? state.businessIdentities[business.id] : undefined;
+  const draftBusiness = business && state.draft.business?.businessId === business.id ? state.draft.business : null;
+  const infrastructure = draftBusiness ? findInfrastructureOption(draftBusiness.infrastructureId) : undefined;
+  const includedAdminComponents = draftBusiness
+    ? [...requiredAdminComponents(), ...ADMIN_COMPONENTS.filter((c) => draftBusiness.adminOptionalIds.includes(c.id))]
+    : [];
 
   return (
     <div className="stack">
@@ -26,7 +34,7 @@ export function FinancesScreen() {
         <div className="card stack">
           <div className="row row--between">
             <div className="section-title" style={{ marginBottom: 0 }}>
-              {business.id} — dernier mois
+              {identity?.displayName ?? "Mon entreprise"} — dernier mois
             </div>
           </div>
           <div className="grid-2">
@@ -47,8 +55,11 @@ export function FinancesScreen() {
               <hr className="divider" />
               <DetailRow label="Salaires" value={statement.payroll} />
               <DetailRow label="Marketing" value={statement.marketing} />
-              <DetailRow label="Loyer" value={statement.rent} />
-              <DetailRow label="Administratif" value={statement.admin} />
+              <DetailRow label={infrastructure ? `Loyer — ${infrastructure.label}` : "Loyer"} value={statement.rent} />
+              <DetailRow
+                label={includedAdminComponents.length > 0 ? `Administratif — ${includedAdminComponents.map((c) => c.label).join(", ")}` : "Administratif"}
+                value={statement.admin}
+              />
               <DetailRow label="Amortissements" value={statement.depreciation} />
               <DetailRow label="Intérêts" value={statement.interest} />
               <DetailRow label="Impôts" value={statement.taxes} />

@@ -1,5 +1,11 @@
 import type { BusinessAction, GameState, MonthActions } from "@founder/engine";
 import { MONTHLY_TIME_BUDGET_HOURS } from "@founder/engine";
+import {
+  computeAdminMonthlyCost,
+  computeInfrastructureMonthlyCost,
+  computeInfrastructureSetupCost,
+  computePurchasesCost,
+} from "./businessCosts";
 import type { BusinessDraft, MonthDraft } from "./types";
 
 export function createEmptyDraft(): MonthDraft {
@@ -21,25 +27,34 @@ export function remainingHours(draft: MonthDraft): number {
   return TOTAL_MONTHLY_HOURS - totalAllocatedHours(draft);
 }
 
+/**
+ * Traduit les choix catalogue du brouillon en `rentBudget`/`adminBudget`/
+ * `capex` (spec M11.1 §2, §4) : agrégation pure de prix affichés, jamais une
+ * conséquence économique — la conséquence reste calculée à 100 % par
+ * `simulateMonth` une fois ces nombres transmis.
+ */
+function buildBusinessAction(b: BusinessDraft, founderHoursAllocated: number): BusinessAction {
+  const setupCost = b.isNew ? computeInfrastructureSetupCost(b.infrastructureId) : 0;
+  const capex = computePurchasesCost(b.purchases) + setupCost;
+  return {
+    businessId: b.businessId,
+    founderHoursAllocated,
+    decisions: b.decisions,
+    marketingBudget: b.marketingBudget,
+    rentBudget: computeInfrastructureMonthlyCost(b.infrastructureId),
+    adminBudget: computeAdminMonthlyCost(b.adminOptionalIds),
+    ...(b.isNew && b.createSpec ? { create: b.createSpec } : {}),
+    ...(capex > 0 ? { capex } : {}),
+    ...(b.targetHeadcount !== null ? { targetHeadcount: b.targetHeadcount } : {}),
+    ...(b.capitalInjection > 0 ? { capitalInjection: b.capitalInjection } : {}),
+  };
+}
+
 /** Construit le `MonthActions` du moteur à partir du brouillon courant. */
 export function buildMonthActions(draft: MonthDraft): MonthActions {
-  const businessActions: BusinessAction[] = [];
-  if (draft.business) {
-    const b: BusinessDraft = draft.business;
-    const action: BusinessAction = {
-      businessId: b.businessId,
-      founderHoursAllocated: draft.timeAllocation.business,
-      decisions: b.decisions,
-      marketingBudget: b.marketingBudget,
-      rentBudget: b.rentBudget,
-      adminBudget: b.adminBudget,
-      ...(b.isNew && b.createSpec ? { create: b.createSpec } : {}),
-      ...(b.capex > 0 ? { capex: b.capex } : {}),
-      ...(b.targetHeadcount !== null ? { targetHeadcount: b.targetHeadcount } : {}),
-      ...(b.capitalInjection > 0 ? { capitalInjection: b.capitalInjection } : {}),
-    };
-    businessActions.push(action);
-  }
+  const businessActions: BusinessAction[] = draft.business
+    ? [buildBusinessAction(draft.business, draft.timeAllocation.business)]
+    : [];
 
   return {
     timeAllocation: draft.timeAllocation,
@@ -55,7 +70,9 @@ export function deriveNextDraft(previousDraft: MonthDraft, nextState: GameState)
     : undefined;
 
   const business: BusinessDraft | null =
-    previousDraft.business && stillExists ? { ...previousDraft.business, isNew: false, createSpec: null, targetHeadcount: null, capitalInjection: 0 } : null;
+    previousDraft.business && stillExists
+      ? { ...previousDraft.business, isNew: false, createSpec: null, targetHeadcount: null, capitalInjection: 0, purchases: [] }
+      : null;
 
   return {
     timeAllocation: {

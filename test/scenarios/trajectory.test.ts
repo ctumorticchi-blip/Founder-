@@ -51,6 +51,7 @@ function healthyBusinessAction(withCreation: boolean): MonthActions {
           ? {
               create: {
                 family: "service" as const,
+                name: "Clean Co",
                 marketId: MARKET.id,
                 costPerLaborHour: 8,
                 averageMonthlySalary: 2_200,
@@ -84,6 +85,7 @@ function ruinousBusinessAction(withCreation: boolean): MonthActions {
           ? {
               create: {
                 family: "service" as const,
+                name: "Clean Co",
                 marketId: MARKET.id,
                 costPerLaborHour: 120,
                 averageMonthlySalary: 2_000,

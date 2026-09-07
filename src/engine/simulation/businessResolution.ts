@@ -22,7 +22,7 @@ const INITIAL_REPUTATION_SCORE = 0.1;
 
 /** Crée une nouvelle entreprise possédée à partir d'une spécification de création (spec §3). */
 export function createOwnedBusiness(id: string, spec: CreateBusinessSpec): OwnedBusiness {
-  const business = createBusiness(id, [spec.family], {
+  const business = createBusiness(spec.name, [spec.family], {
     creditLineLimit: spec.creditLineLimit,
     creditLineInterestRateAnnual: spec.creditLineInterestRateAnnual,
   });

@@ -59,6 +59,7 @@ export function buildServiceScenarioActions(monthIndex: number, state: GameState
       : {
           create: {
             family: "service",
+            name: "Service Co",
             marketId: SERVICE_MARKET.id,
             costPerLaborHour: 8,
             averageMonthlySalary: 2_200,

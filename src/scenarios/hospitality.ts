@@ -58,6 +58,7 @@ export function buildHospitalityScenarioActions(monthIndex: number, state: GameS
       ? {
           create: {
             family: "hospitality",
+            name: "Resto & Co",
             marketId: HOSPITALITY_MARKET.id,
             foodCostPerCover: 9,
             averageMonthlySalary: 2_000,

@@ -55,6 +55,8 @@ export interface OwnedBusiness {
 export type CreateBusinessSpec =
   | {
       readonly family: "service";
+      /** Nom commercial choisi par le joueur (spec M11.1 : identité réelle, pas un id technique). */
+      readonly name: string;
       readonly marketId: string;
       readonly costPerLaborHour: number;
       readonly averageMonthlySalary: number;
@@ -63,6 +65,7 @@ export type CreateBusinessSpec =
     }
   | {
       readonly family: "hospitality";
+      readonly name: string;
       readonly marketId: string;
       readonly foodCostPerCover: number;
       readonly averageMonthlySalary: number;
@@ -71,6 +74,7 @@ export type CreateBusinessSpec =
     }
   | {
       readonly family: "subscription";
+      readonly name: string;
       readonly marketId: string;
       readonly arpu: number;
       readonly churnRateBase: number;
@@ -82,6 +86,7 @@ export type CreateBusinessSpec =
     }
   | {
       readonly family: "retail";
+      readonly name: string;
       readonly marketId: string;
       readonly unitCostOfGoods: number;
       readonly averageMonthlySalary: number;
@@ -90,6 +95,7 @@ export type CreateBusinessSpec =
     }
   | {
       readonly family: "agency";
+      readonly name: string;
       readonly marketId: string;
       readonly averageMonthlyFeePerMandate: number;
       readonly deliveryCostRatio: number;
