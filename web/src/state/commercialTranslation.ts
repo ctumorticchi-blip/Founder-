@@ -27,34 +27,35 @@ function deriveTargetValue(family: EconomicFamily, prospectionHours: number): nu
 }
 
 /**
- * Reconstruit les `decisions` complètes envoyées au moteur : les champs
- * concrets (prix, ticket moyen, stock...) viennent tels quels de
- * `concreteFields` (édités par le joueur via `DecisionFields`), le champ
- * "cible" est toujours recalculé depuis `prospectionHours`, jamais lu
- * depuis `concreteFields` même s'il y est présent (évite qu'une valeur
- * périmée s'y glisse).
+ * Reconstruit les `decisions` complètes envoyées au moteur : le prix
+ * (spec M11.2 §3.4) vient désormais de la première offre lancée de
+ * l'entreprise (`activeOfferPrice`, calculé par `draft.ts::buildBusinessAction`
+ * en lisant `gameState`), jamais d'un champ libre édité côté décisions —
+ * `null` (aucune offre lancée) donne un prix de `0` : tant qu'aucune offre
+ * n'est lancée, l'entreprise ne vend rien. `concreteFields` ne sert plus
+ * que pour `retail.stockUnits`, seule décision opérationnelle restante non
+ * liée au prix. Le champ "cible" reste recalculé depuis `prospectionHours`,
+ * inchangé depuis M11.1.5.
  */
 export function deriveDecisions(
   family: BusinessFamilyDecisions["family"],
   prospectionHours: number,
   concreteFields: BusinessFamilyDecisions,
+  activeOfferPrice: number | null,
 ): BusinessFamilyDecisions {
   const target = deriveTargetValue(family, prospectionHours);
+  const price = activeOfferPrice ?? 0;
   switch (family) {
     case "service":
-      return { family, price: concreteFields.family === "service" ? concreteFields.price : 0, targetHours: target };
+      return { family, price, targetHours: target };
     case "hospitality":
-      return {
-        family,
-        averageTicketPrice: concreteFields.family === "hospitality" ? concreteFields.averageTicketPrice : 0,
-        expectedDemandCovers: target,
-      };
+      return { family, averageTicketPrice: price, expectedDemandCovers: target };
     case "subscription":
       return { family, newSubscribers: target };
     case "retail":
       return {
         family,
-        unitPrice: concreteFields.family === "retail" ? concreteFields.unitPrice : 0,
+        unitPrice: price,
         stockUnits: concreteFields.family === "retail" ? concreteFields.stockUnits : 0,
         expectedFootTraffic: target,
       };

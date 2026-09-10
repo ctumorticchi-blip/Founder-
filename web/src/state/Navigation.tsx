@@ -10,6 +10,10 @@ export type Route =
   | { readonly screen: "portfolio" }
   | { readonly screen: "business"; readonly businessId: string }
   | { readonly screen: "workforce"; readonly businessId: string }
+  /** Construction d'une nouvelle offre (spec M11.2 §3.5). */
+  | { readonly screen: "createOffer"; readonly businessId: string }
+  /** Fiche d'une offre existante — développement/lancement/amélioration (spec M11.2 §3.5). */
+  | { readonly screen: "offer"; readonly businessId: string; readonly offerId: string }
   | { readonly screen: "finances"; readonly businessId?: string }
   | { readonly screen: "news" };
 

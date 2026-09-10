@@ -46,6 +46,8 @@ export interface Opportunity {
   readonly recommendedInfrastructureId: string;
   readonly recommendedAdminOptionalIds: readonly string[];
   readonly recommendedPurchases: readonly Purchase[];
+  /** Prix suggéré pour la première offre (spec M11.2 §3.5) : repris des anciens montants recommandés (`recommendedDecisions`). */
+  readonly recommendedOfferPrice: number;
 }
 
 export const OPPORTUNITIES: readonly Opportunity[] = [
@@ -73,6 +75,7 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     recommendedInfrastructureId: "domicile",
     recommendedAdminOptionalIds: [],
     recommendedPurchases: [],
+    recommendedOfferPrice: 45,
   },
   {
     family: "hospitality",
@@ -98,6 +101,7 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     recommendedInfrastructureId: "petit-bureau",
     recommendedAdminOptionalIds: ["conformite"],
     recommendedPurchases: [{ itemId: "materiel-pro", quantity: 1 }, { itemId: "amenagement", quantity: 1 }],
+    recommendedOfferPrice: 26,
   },
   {
     family: "subscription",
@@ -126,6 +130,7 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     recommendedInfrastructureId: "domicile",
     recommendedAdminOptionalIds: ["logiciels"],
     recommendedPurchases: [{ itemId: "ordinateur", quantity: 1 }],
+    recommendedOfferPrice: 29,
   },
   {
     family: "retail",
@@ -152,6 +157,7 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     recommendedInfrastructureId: "petit-bureau",
     recommendedAdminOptionalIds: [],
     recommendedPurchases: [{ itemId: "mobilier", quantity: 1 }],
+    recommendedOfferPrice: 15,
   },
   {
     family: "agency",
@@ -178,6 +184,7 @@ export const OPPORTUNITIES: readonly Opportunity[] = [
     recommendedInfrastructureId: "coworking",
     recommendedAdminOptionalIds: [],
     recommendedPurchases: [{ itemId: "ordinateur", quantity: 1 }],
+    recommendedOfferPrice: 6_000,
   },
 ];
 

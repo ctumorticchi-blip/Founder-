@@ -1,4 +1,4 @@
-import type { BusinessAction, GameState, MonthActions, OwnedProperty } from "@founder/engine";
+import type { BusinessAction, GameState, MonthActions, OfferAction, OwnedProperty } from "@founder/engine";
 import { MONTHLY_TIME_BUDGET_HOURS } from "@founder/engine";
 import {
   computeAdminMonthlyCost,
@@ -31,13 +31,36 @@ export function remainingHours(draft: MonthDraft): number {
   return TOTAL_MONTHLY_HOURS - totalAllocatedHours(draft);
 }
 
-/** Somme des heures fondateur (production + prospection) allouées à toutes les entreprises (spec M11.1.5 §5.3, §7.2). */
+/**
+ * Somme des heures fondateur (production + prospection + développement
+ * d'offre) allouées à toutes les entreprises (spec M11.1.5 §5.3, §7.2,
+ * étendue M11.2 §3.3).
+ */
 export function totalFounderBusinessHours(draft: MonthDraft): number {
-  return draft.businesses.reduce((sum, b) => sum + b.founderHoursAllocated + b.prospectionHours, 0);
+  return draft.businesses.reduce(
+    (sum, b) => sum + b.founderHoursAllocated + b.prospectionHours + offerDevelopmentHours(b.offerActions),
+    0,
+  );
 }
 
 function ownedPropertiesFor(gameState: GameState | null, businessId: string): readonly OwnedProperty[] {
   return gameState?.businesses.find((business) => business.id === businessId)?.business.properties ?? [];
+}
+
+/**
+ * Prix de l'offre active de l'entreprise (spec M11.2 §3.4) : la première
+ * offre `status === "launched"` par ordre de création (le tableau n'est
+ * jamais réordonné), ou `null` si aucune offre n'est encore lancée — la
+ * traduction `deriveDecisions` transforme alors ce `null` en prix `0`.
+ */
+function activeOfferPriceFor(gameState: GameState | null, businessId: string): number | null {
+  const offers = gameState?.businesses.find((business) => business.id === businessId)?.business.offers ?? [];
+  return offers.find((offer) => offer.status === "launched")?.price ?? null;
+}
+
+/** Somme des heures de développement d'offre demandées ce mois-ci pour une entreprise. */
+export function offerDevelopmentHours(offerActions: readonly OfferAction[]): number {
+  return offerActions.reduce((sum, action) => sum + (action.kind === "develop" ? action.hours : 0), 0);
 }
 
 /**
@@ -53,12 +76,13 @@ function buildBusinessAction(b: BusinessDraft, gameState: GameState | null): Bus
   const capex = computePurchasesCost(b.purchases) + setupCost;
 
   const listing = b.propertyPurchase ? findPropertyListing(b.propertyPurchase.listingId) : null;
+  const activeOfferPrice = activeOfferPriceFor(gameState, b.businessId);
 
   return {
     businessId: b.businessId,
     founderHoursAllocated: b.founderHoursAllocated,
     founderProspectionHoursAllocated: b.prospectionHours,
-    decisions: deriveDecisions(b.family, b.prospectionHours, b.decisions),
+    decisions: deriveDecisions(b.family, b.prospectionHours, b.decisions, activeOfferPrice),
     marketingBudget: b.marketingBudget,
     rentBudget: computeInfrastructureMonthlyCost(b.infrastructureId),
     adminBudget: computeAdminMonthlyCost(b.adminOptionalIds),
@@ -66,6 +90,7 @@ function buildBusinessAction(b: BusinessDraft, gameState: GameState | null): Bus
     storageCapacity: computeEffectiveStorageCapacity(b.infrastructureId, properties),
     ...(b.isNew && b.createSpec ? { create: b.createSpec } : {}),
     ...(capex > 0 ? { capex } : {}),
+    ...(b.offerActions.length > 0 ? { offerActions: b.offerActions } : {}),
     ...(b.targetHeadcount !== null ? { targetHeadcount: b.targetHeadcount } : {}),
     ...(b.capitalInjection > 0 ? { capitalInjection: b.capitalInjection } : {}),
     ...(listing && b.propertyPurchase
@@ -110,6 +135,7 @@ export function deriveNextDraft(previousDraft: MonthDraft, nextState: GameState)
       purchases: [],
       propertyPurchase: null,
       saleDecision: null,
+      offerActions: [],
       committedInfrastructureId: b.infrastructureId,
     }));
 

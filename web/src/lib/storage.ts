@@ -1,7 +1,72 @@
-import type { EconomicFamily, GameDate } from "@founder/engine";
+import { INITIAL_QUALITY_LEVEL, type BusinessFamilyDecisions, type BusinessFamilyState, type EconomicFamily, type GameDate, type Offer, type OfferBusinessModel } from "@founder/engine";
 import { findOpportunity } from "../data/opportunities";
 import { defaultBusinessIdentity } from "../state/businessIdentity";
 import type { BusinessDraft, BusinessIdentity, MonthDraft, SaveGameV1 } from "../state/types";
+
+/** Modèle économique par défaut d'une offre historique synthétisée par migration (spec M11.2 §3.7). */
+function defaultBusinessModelForFamily(family: EconomicFamily): OfferBusinessModel {
+  switch (family) {
+    case "service":
+      return "service-hours";
+    case "hospitality":
+      return "unit-sale";
+    case "subscription":
+      return "recurring";
+    case "retail":
+      return "unit-sale";
+    case "agency":
+      return "project";
+  }
+}
+
+/**
+ * Prix effectif d'une entreprise avant M11.2 (spec §3.7) : lu depuis les
+ * décisions du brouillon pour les familles à prix éditable
+ * (service/hospitality/retail), depuis `familyState` pour les familles à
+ * prix figé à la création (subscription/agency, spec §0.2, §3.6).
+ */
+function extractLegacyPrice(familyState: BusinessFamilyState, decisions: BusinessFamilyDecisions | undefined): number {
+  switch (familyState.family) {
+    case "service":
+      return decisions?.family === "service" ? decisions.price : 0;
+    case "hospitality":
+      return decisions?.family === "hospitality" ? decisions.averageTicketPrice : 0;
+    case "retail":
+      return decisions?.family === "retail" ? decisions.unitPrice : 0;
+    case "subscription":
+      return familyState.arpu;
+    case "agency":
+      return familyState.averageMonthlyFeePerMandate;
+  }
+}
+
+/**
+ * Synthétise une offre historique déjà lancée pour une entreprise migrée
+ * (spec M11.2 §3.7) : préserve la continuité de revenu — aucune
+ * interruption au moment de la mise à jour, même prix qu'avant.
+ */
+function synthesizeLegacyOffer(
+  businessId: string,
+  familyState: BusinessFamilyState,
+  decisions: BusinessFamilyDecisions | undefined,
+  date: GameDate,
+): Offer {
+  return {
+    id: `${businessId}-legacy-offer`,
+    name: "Offre historique",
+    businessModel: defaultBusinessModelForFamily(familyState.family),
+    positioning: "standard",
+    targetSegment: "Clientèle existante",
+    price: extractLegacyPrice(familyState, decisions),
+    status: "launched",
+    maturity: 100,
+    qualityLevel: INITIAL_QUALITY_LEVEL,
+    developmentHoursInvested: 0,
+    developmentBudgetInvested: 0,
+    createdAt: date,
+    launchedAt: date,
+  };
+}
 
 const STORAGE_KEY = "founder.save.v1";
 
@@ -32,17 +97,29 @@ export function migrateSaveGame(raw: unknown): SaveGameV1 {
     }
   }
 
-  const gameState = {
-    ...save.gameState,
-    businesses: save.gameState.businesses.map((owned) => ({
-      ...owned,
-      business: { ...owned.business, properties: owned.business.properties ?? [] },
-      saleProcess: owned.saleProcess ?? null,
-    })),
-  };
-
   const legacyDraft = save.draft as MonthDraft & { readonly business?: BusinessDraft | null };
   const rawBusinesses: readonly BusinessDraft[] = legacyDraft.businesses ?? (legacyDraft.business ? [legacyDraft.business] : []);
+  const decisionsByBusinessId = new Map(rawBusinesses.map((business) => [business.businessId, business.decisions]));
+
+  const gameState = {
+    ...save.gameState,
+    businesses: save.gameState.businesses.map((owned) => {
+      const offers: readonly Offer[] = owned.business.offers ?? [
+        synthesizeLegacyOffer(
+          owned.id,
+          owned.familyState,
+          decisionsByBusinessId.get(owned.id),
+          businessIdentities[owned.id]?.createdAt ?? gameStateDate,
+        ),
+      ];
+      return {
+        ...owned,
+        business: { ...owned.business, properties: owned.business.properties ?? [], offers },
+        saleProcess: owned.saleProcess ?? null,
+      };
+    }),
+  };
+
   const businesses = rawBusinesses.map((business) => migrateBusinessDraft(business, businessIdentities));
 
   return {
@@ -82,6 +159,7 @@ function migrateBusinessDraft(
       (base as { readonly committedInfrastructureId?: string }).committedInfrastructureId ?? base.infrastructureId,
     propertyPurchase: (base as { readonly propertyPurchase?: BusinessDraft["propertyPurchase"] }).propertyPurchase ?? null,
     saleDecision: (base as { readonly saleDecision?: BusinessDraft["saleDecision"] }).saleDecision ?? null,
+    offerActions: (base as { readonly offerActions?: BusinessDraft["offerActions"] }).offerActions ?? [],
   };
 }
 

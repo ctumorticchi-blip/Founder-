@@ -1,4 +1,4 @@
-import type { BusinessFamilyDecisions, CreateBusinessSpec, GameDate, GameState, SaleDecision, TimeCategory } from "@founder/engine";
+import type { BusinessFamilyDecisions, CreateBusinessSpec, GameDate, GameState, OfferAction, SaleDecision, TimeCategory } from "@founder/engine";
 
 /**
  * Modèle de "brouillon" du mois en cours, côté UI uniquement. Le joueur
@@ -64,6 +64,13 @@ export interface BusinessDraft {
   readonly propertyPurchase: PropertyPurchaseDraft | null;
   /** Décision de cession ce mois-ci (spec M11.1.5 §6.2), remise à `null` chaque mois. */
   readonly saleDecision: SaleDecision | null;
+  /**
+   * Actions sur les offres de cette entreprise ce mois-ci (spec M11.2
+   * §3.2-3.3) : type moteur réutilisé directement, aucune traduction
+   * catalogue nécessaire (le prix/positionnement sont déjà saisis tels
+   * quels par le joueur). Remis à `[]` chaque mois par `deriveNextDraft`.
+   */
+  readonly offerActions: readonly OfferAction[];
 }
 
 /** Identité commerciale d'une entreprise (spec M11.1 §3.2), séparée du fait moteur `BusinessState.name`. */

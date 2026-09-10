@@ -7,6 +7,7 @@ import { CapexPicker } from "../components/business/CapexPicker";
 import { TimeAllocationPanel } from "../components/business/TimeAllocationPanel";
 import { PropertyPurchasePanel } from "../components/business/PropertyPurchasePanel";
 import { SalePanel } from "../components/business/SalePanel";
+import { OffersCard } from "../components/business/OffersCard";
 import { NumberField } from "../components/ui/NumberField";
 import { StatTile } from "../components/ui/StatTile";
 import { Money } from "../components/ui/Money";
@@ -152,9 +153,20 @@ export function BusinessScreen({ businessId }: { readonly businessId: string }) 
         </div>
       ) : null}
 
+      <OffersCard
+        businessId={draftBusiness.businessId}
+        family={draftBusiness.family}
+        offers={business?.business.offers ?? []}
+        pendingCreateActions={draftBusiness.offerActions}
+      />
+
       <div className="card stack">
         <div className="section-title">Décisions du mois</div>
-        <DecisionFields decisions={draftBusiness.decisions} onChange={(decisions) => updateDecisions(draftBusiness.businessId, decisions)} />
+        <DecisionFields
+          decisions={draftBusiness.decisions}
+          onChange={(decisions) => updateDecisions(draftBusiness.businessId, decisions)}
+          hasLaunchedOffer={(business?.business.offers ?? []).some((offer) => offer.status === "launched")}
+        />
         <NumberField
           label="Budget marketing"
           value={draftBusiness.marketingBudget}

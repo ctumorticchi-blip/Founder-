@@ -142,6 +142,18 @@ export {
 export type { ValuationFactor, ValuationResult } from "./types/valuation.js";
 export { computeValuation } from "./engine/business/valuation.js";
 
+export type { Offer, OfferAction, OfferBusinessModel, OfferCreateSpec, OfferPositioning, OfferStatus } from "./types/offer.js";
+export {
+  DEVELOPMENT_POINTS_PER_BUDGET_EURO,
+  DEVELOPMENT_POINTS_PER_HOUR,
+  INITIAL_QUALITY_LEVEL,
+  computeLaunchThreshold,
+  createOffer,
+  developOffer,
+  launchOffer,
+  updateOfferPricing,
+} from "./engine/business/offer.js";
+
 export type { SaleClosing, SaleDecision, SaleOffer, SaleProcessState, SaleStatus } from "./types/sale.js";
 export {
   COUNTER_OFFER_ACCEPTANCE_MULTIPLE,

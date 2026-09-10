@@ -97,4 +97,29 @@ describe("migrateSaveGame", () => {
     expect(migratedBusiness.business.properties).toEqual([]);
     expect(migratedBusiness.saleProcess).toBeNull();
   });
+
+  it("synthétise une offre historique déjà lancée pour préserver la continuité de revenu (spec M11.2 §3.7)", () => {
+    const migrated = migrateSaveGame(LEGACY_M10_SAVE);
+    const offers = migrated.gameState.businesses[0]!.business.offers;
+    expect(offers).toHaveLength(1);
+    expect(offers[0]!.status).toBe("launched");
+    expect(offers[0]!.maturity).toBe(100);
+    // Le prix historique (decisions.price = 40) est préservé, pas remis à 0.
+    expect(offers[0]!.price).toBe(40);
+    expect(offers[0]!.name).not.toContain("service-abc123"); // jamais d'id technique dans un champ affiché
+  });
+
+  it("l'id de l'offre historique est stable : une double migration ne crée pas de doublon (idempotence)", () => {
+    const migratedOnce = migrateSaveGame(LEGACY_M10_SAVE);
+    const migratedTwice = migrateSaveGame(migratedOnce);
+    expect(migratedTwice.gameState.businesses[0]!.business.offers).toHaveLength(1);
+    expect(migratedTwice.gameState.businesses[0]!.business.offers[0]!.id).toBe(
+      migratedOnce.gameState.businesses[0]!.business.offers[0]!.id,
+    );
+  });
+
+  it("draft.businesses[i].offerActions est initialisé à [] par la migration", () => {
+    const migrated = migrateSaveGame(LEGACY_M10_SAVE);
+    expect(migrated.draft.businesses[0]!.offerActions).toEqual([]);
+  });
 });

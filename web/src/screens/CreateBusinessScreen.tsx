@@ -67,6 +67,7 @@ export function CreateBusinessScreen({ family }: { readonly family: string }) {
       capitalInjection: 0,
       propertyPurchase: null,
       saleDecision: null,
+      offerActions: [],
     };
     startBusiness(draft);
     navigate({ screen: "business", businessId: draft.businessId });
@@ -96,7 +97,7 @@ export function CreateBusinessScreen({ family }: { readonly family: string }) {
 
       <div className="card stack">
         <div className="section-title">Paramètres de lancement</div>
-        <DecisionFields decisions={decisions} onChange={setDecisions} />
+        <DecisionFields decisions={decisions} onChange={setDecisions} hasLaunchedOffer={false} />
         <NumberField
           label="Temps de prospection"
           value={prospectionHours}

@@ -1,4 +1,5 @@
 import type { Rng } from "../rng/rng.js";
+import type { GameDate } from "../time/clock.js";
 import { clamp } from "../util/math.js";
 import {
   adjustHeadcount,
@@ -15,6 +16,7 @@ import {
   evaluateFinancingEligibility,
   purchaseProperty,
 } from "../business/realEstate.js";
+import { createOffer, developOffer, launchOffer, updateOfferPricing } from "../business/offer.js";
 import { computeServiceMonth } from "../economic-models/service.js";
 import { computeHospitalityMonth } from "../economic-models/hospitality.js";
 import { computeSubscriptionMonth } from "../economic-models/subscription.js";
@@ -24,6 +26,7 @@ import { createBusiness } from "../business/treasury.js";
 import { createWorkforce } from "../employees/employees.js";
 import type { MonthlyFinancialStatement } from "../../types/business.js";
 import type { OwnedProperty } from "../../types/realEstate.js";
+import type { Offer, OfferAction } from "../../types/offer.js";
 import type { BusinessAction, BusinessFamilyState, CreateBusinessSpec, OwnedBusiness } from "./types.js";
 
 const INITIAL_REPUTATION_SCORE = 0.1;
@@ -94,6 +97,57 @@ export interface ResolvedBusinessMonth {
   readonly severanceCost: number;
 }
 
+/**
+ * Applique les actions du joueur sur les offres de l'entreprise ce mois-ci
+ * (spec M11.2 §3.3), dans l'ordre fourni. Le coût de développement cumulé
+ * (`developmentSpend`) rejoint la ligne `admin` du compte de résultat —
+ * même mécanisme que la maintenance immobilière (M11.1.5 §4.3) : aucun
+ * nouveau champ de `MonthlyFinancialStatement`, protégé automatiquement
+ * par la cascade d'insolvabilité déjà existante.
+ */
+function applyOfferActions(
+  offers: readonly Offer[],
+  actions: readonly OfferAction[],
+  date: GameDate,
+): { readonly offers: readonly Offer[]; readonly developmentSpend: number } {
+  let result = offers;
+  let developmentSpend = 0;
+  for (const action of actions) {
+    switch (action.kind) {
+      case "create": {
+        result = [...result, createOffer(action.spec, date)];
+        break;
+      }
+      case "develop": {
+        const index = result.findIndex((offer) => offer.id === action.offerId);
+        if (index === -1) {
+          throw new RangeError(`resolveBusinessMonth: offre "${action.offerId}" introuvable pour le développement.`);
+        }
+        result = result.map((offer, i) => (i === index ? developOffer(offer, action.hours, action.budget) : offer));
+        developmentSpend += action.budget;
+        break;
+      }
+      case "launch": {
+        const index = result.findIndex((offer) => offer.id === action.offerId);
+        if (index === -1) {
+          throw new RangeError(`resolveBusinessMonth: offre "${action.offerId}" introuvable pour le lancement.`);
+        }
+        result = result.map((offer, i) => (i === index ? launchOffer(offer, date) : offer));
+        break;
+      }
+      case "update-pricing": {
+        const index = result.findIndex((offer) => offer.id === action.offerId);
+        if (index === -1) {
+          throw new RangeError(`resolveBusinessMonth: offre "${action.offerId}" introuvable pour la mise à jour du prix.`);
+        }
+        result = result.map((offer, i) => (i === index ? updateOfferPricing(offer, action.price, action.positioning) : offer));
+        break;
+      }
+    }
+  }
+  return { offers: result, developmentSpend };
+}
+
 function requireFamilyState<TFamily extends BusinessFamilyState["family"]>(
   familyState: BusinessFamilyState,
   family: TFamily,
@@ -118,6 +172,7 @@ export function resolveBusinessMonth(
   demandShare: number,
   founderLeadershipSkill: number,
   rng: Rng,
+  date: GameDate,
 ): ResolvedBusinessMonth {
   if (!action.decisions) {
     throw new RangeError(`resolveBusinessMonth: businessId="${action.businessId}" nécessite des décisions ce mois-ci.`);
@@ -236,6 +291,15 @@ export function resolveBusinessMonth(
   const totalMortgagePrincipal = mortgagePayments.reduce((sum, { payment }) => sum + (payment?.principalPortion ?? 0), 0);
   const totalMaintenance = computeTotalMaintenance(propertiesAfterPayments);
 
+  // Offres (spec M11.2 §3.3) : appliquées avant la comptabilité pour que le
+  // coût de développement de ce mois-ci apparaisse dans les charges de CE
+  // mois-ci, comme la maintenance immobilière.
+  const { offers: offersAfterActions, developmentSpend } = applyOfferActions(
+    owned.business.offers,
+    action.offerActions ?? [],
+    date,
+  );
+
   const interest = computeMonthlyInterest(owned.business.treasury.creditLine) + totalMortgageInterest;
   const statement = computeMonthlyFinancials({
     revenue,
@@ -243,7 +307,8 @@ export function resolveBusinessMonth(
     payroll: computePayrollCost(headcountResult.workforce),
     marketing: action.marketingBudget,
     rent: action.rentBudget,
-    admin: action.adminBudget + headcountResult.recruitmentCost + headcountResult.severanceCost + totalMaintenance,
+    admin:
+      action.adminBudget + headcountResult.recruitmentCost + headcountResult.severanceCost + totalMaintenance + developmentSpend,
     depreciation: 0,
     interest,
     taxRate: TAX_RATE,
@@ -254,7 +319,7 @@ export function resolveBusinessMonth(
     workingCapitalChange: 0,
   });
 
-  const businessWithPropertyPayments = { ...owned.business, properties: propertiesAfterPayments };
+  const businessWithPropertyPayments = { ...owned.business, properties: propertiesAfterPayments, offers: offersAfterActions };
 
   let businessBeforeCashFlow =
     action.capitalInjection && action.capitalInjection > 0

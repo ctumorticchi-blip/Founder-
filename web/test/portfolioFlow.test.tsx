@@ -24,6 +24,7 @@ function seedTwoBusinessSave() {
     capitalInjection: 0,
     propertyPurchase: null,
     saleDecision: null,
+    offerActions: [],
   });
 
   const ownedBusiness = (id: string, family: string, name: string) => ({

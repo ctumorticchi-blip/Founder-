@@ -8,6 +8,7 @@ import type { MacroState } from "../../types/world.js";
 import type { GameEvent, MemoryEntry } from "../../types/narrative.js";
 import type { PropertyPurchaseSpec } from "../../types/realEstate.js";
 import type { SaleDecision, SaleProcessState } from "../../types/sale.js";
+import type { OfferAction } from "../../types/offer.js";
 
 /** État persistant propre à chaque famille, en plus de `BusinessState`/`WorkforceState` communs. */
 export type BusinessFamilyState =
@@ -147,6 +148,14 @@ export interface BusinessAction {
   readonly propertyPurchase?: PropertyPurchaseSpec;
   /** Décision du joueur sur un processus de cession en cours, ou lancement d'un nouveau (spec M11.1.5 §6.2). */
   readonly saleDecision?: SaleDecision;
+  /**
+   * Actions du joueur sur une ou plusieurs offres de cette entreprise ce
+   * mois-ci (spec M11.2 §3.2-3.3). Les heures des actions `"develop"`
+   * comptent contre le même budget de temps fondateur global que
+   * `founderHoursAllocated`/`founderProspectionHoursAllocated` (voir
+   * `validateActions`).
+   */
+  readonly offerActions?: readonly OfferAction[];
   /**
    * Texte libre relayé verbatim comme `GameEvent` de type `business-note`
    * (spec M11.1.5 §3.3) : passe-plat narratif générique, le moteur ne

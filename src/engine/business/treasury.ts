@@ -60,6 +60,7 @@ export function createBusiness(
       isInsolvent: false,
     },
     properties: [],
+    offers: [],
   };
 }
 

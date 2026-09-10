@@ -28,6 +28,7 @@ const SUBSCRIPTION_SPEC: CreateBusinessSpec = {
 
 const LEADERSHIP_SKILL = 50;
 const DEMAND_SHARE = 1; // isole l'effet de capacité/effectif de la variance de part de marché.
+const DATE = { year: 2026, month: 1 };
 
 function serviceAction(overrides: Partial<BusinessAction> = {}): BusinessAction {
   return {
@@ -63,6 +64,7 @@ describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
       DEMAND_SHARE,
       LEADERSHIP_SKILL,
       createRng(1),
+      DATE,
     );
     const staffedResult = resolveBusinessMonth(
       owned,
@@ -70,6 +72,7 @@ describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
       DEMAND_SHARE,
       LEADERSHIP_SKILL,
       createRng(1),
+      DATE,
     );
 
     expect(staffedResult.statement.revenue).toBeGreaterThan(soloResult.statement.revenue);
@@ -79,8 +82,8 @@ describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
     const owned = createOwnedBusiness("svc", SERVICE_SPEC);
     const action = serviceAction({ targetHeadcount: 5 });
 
-    const lowLeadership = resolveBusinessMonth(owned, action, DEMAND_SHARE, 0, createRng(1));
-    const highLeadership = resolveBusinessMonth(owned, action, DEMAND_SHARE, 100, createRng(1));
+    const lowLeadership = resolveBusinessMonth(owned, action, DEMAND_SHARE, 0, createRng(1), DATE);
+    const highLeadership = resolveBusinessMonth(owned, action, DEMAND_SHARE, 100, createRng(1), DATE);
 
     expect(highLeadership.statement.revenue).toBeGreaterThanOrEqual(lowLeadership.statement.revenue);
   });
@@ -89,14 +92,14 @@ describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
 describe("resolveBusinessMonth — payroll dans le P&L et cash-flow", () => {
   it("le payroll du P&L est exactement effectif * salaire moyen", () => {
     const owned = createOwnedBusiness("svc", SERVICE_SPEC);
-    const result = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 4 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1));
+    const result = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 4 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
     expect(result.statement.payroll).toBeCloseTo(4 * SERVICE_SPEC.averageMonthlySalary);
   });
 
   it("le coût réel d'une embauche (recrutement) est imputé au P&L le mois de l'embauche", () => {
     const owned = createOwnedBusiness("svc", SERVICE_SPEC);
-    const withoutHire = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 0 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1));
-    const withHire = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 3 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1));
+    const withoutHire = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 0 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
+    const withHire = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 3 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
 
     // 3 embauches * 1 mois de salaire de coût de recrutement, imputé en admin.
     expect(withHire.recruitmentCost).toBeCloseTo(3 * SERVICE_SPEC.averageMonthlySalary);
@@ -105,7 +108,7 @@ describe("resolveBusinessMonth — payroll dans le P&L et cash-flow", () => {
 
   it("le licenciement facture un coût de séparation réel", () => {
     const owned = { ...createOwnedBusiness("svc", SERVICE_SPEC), workforce: { headcount: 5, averageMonthlySalary: SERVICE_SPEC.averageMonthlySalary } };
-    const result = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 1 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1));
+    const result = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 1 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
     expect(result.fired).toBe(4);
     expect(result.severanceCost).toBeCloseTo(4 * SERVICE_SPEC.averageMonthlySalary);
   });
@@ -118,8 +121,8 @@ describe("resolveBusinessMonth — sur-effectif (masse salariale gaspillée sans
     const lowDemandAction = (headcount: number): BusinessAction =>
       serviceAction({ targetHeadcount: headcount, decisions: { family: "service", price: 40, targetHours: 5 } });
 
-    const lean = resolveBusinessMonth(owned, lowDemandAction(0), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1));
-    const overstaffed = resolveBusinessMonth(owned, lowDemandAction(20), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1));
+    const lean = resolveBusinessMonth(owned, lowDemandAction(0), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
+    const overstaffed = resolveBusinessMonth(owned, lowDemandAction(20), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
 
     expect(overstaffed.statement.revenue).toBeCloseTo(lean.statement.revenue, 0);
     expect(overstaffed.statement.payroll).toBeGreaterThan(lean.statement.payroll);
@@ -142,8 +145,8 @@ describe("resolveBusinessMonth — sous-effectif (Subscription : pénalité de c
       storageCapacity: Number.POSITIVE_INFINITY,
     };
 
-    const understaffed = resolveBusinessMonth(owned, { ...action, targetHeadcount: 0 }, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1));
-    const adequatelyStaffed = resolveBusinessMonth(owned, { ...action, targetHeadcount: 4 }, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1));
+    const understaffed = resolveBusinessMonth(owned, { ...action, targetHeadcount: 0 }, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
+    const adequatelyStaffed = resolveBusinessMonth(owned, { ...action, targetHeadcount: 4 }, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
 
     if (understaffed.updated.familyState.family !== "subscription" || adequatelyStaffed.updated.familyState.family !== "subscription") {
       throw new Error("familyState devrait rester 'subscription'");
@@ -166,6 +169,6 @@ describe("resolveBusinessMonth — rejette une famille de décisions incompatibl
       headcountCapacity: Number.POSITIVE_INFINITY,
       storageCapacity: Number.POSITIVE_INFINITY,
     };
-    expect(() => resolveBusinessMonth(owned, wrongAction, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1))).toThrow(RangeError);
+    expect(() => resolveBusinessMonth(owned, wrongAction, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE)).toThrow(RangeError);
   });
 });

@@ -74,13 +74,17 @@ function validateActions(state: GameState, actions: MonthActions): void {
     }
   }
 
-  // Budget de temps fondateur partagé (spec M11.1.5 §5.3, §7.2) : production
-  // ET prospection de TOUTES les entreprises comptent contre le même budget
-  // global — jamais un levier gratuit, jamais un dédoublement de temps.
-  const totalFounderHours = actions.businessActions.reduce(
-    (sum, action) => sum + action.founderHoursAllocated + action.founderProspectionHoursAllocated,
-    0,
-  );
+  // Budget de temps fondateur partagé (spec M11.1.5 §5.3, §7.2, étendu
+  // M11.2 §3.3) : production, prospection ET développement d'offre de
+  // TOUTES les entreprises comptent contre le même budget global — jamais
+  // un levier gratuit, jamais un dédoublement de temps.
+  const totalFounderHours = actions.businessActions.reduce((sum, action) => {
+    const developmentHours = (action.offerActions ?? []).reduce(
+      (offerSum, offerAction) => offerSum + (offerAction.kind === "develop" ? offerAction.hours : 0),
+      0,
+    );
+    return sum + action.founderHoursAllocated + action.founderProspectionHoursAllocated + developmentHours;
+  }, 0);
   if (totalFounderHours > actions.timeAllocation.business) {
     throw new RangeError(
       `simulateMonth: la somme des heures fondateur allouées aux entreprises (${totalFounderHours}h, production + prospection) dépasse le temps "business" alloué (${actions.timeAllocation.business}h).`,
@@ -157,7 +161,7 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
     }
 
     const demandShare = availableDemandShare(competitions[owned.marketId]!);
-    const resolved = resolveBusinessMonth(owned, action, demandShare, state.character.skills.leadership, rng);
+    const resolved = resolveBusinessMonth(owned, action, demandShare, state.character.skills.leadership, rng, nextDate);
 
     if (isNew) {
       events.push({

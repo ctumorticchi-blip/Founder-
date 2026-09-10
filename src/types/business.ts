@@ -1,4 +1,5 @@
 import type { OwnedProperty } from "./realEstate.js";
+import type { Offer } from "./offer.js";
 
 /**
  * Familles économiques actives en P0 (spec §7). Une entreprise peut combiner
@@ -119,4 +120,6 @@ export interface BusinessState {
   readonly treasury: TreasuryState;
   /** Biens immobiliers professionnels possédés (spec M11.1.5 §4.2). Vide par défaut. */
   readonly properties: readonly OwnedProperty[];
+  /** Offres construites par le joueur (spec M11.2 §3.2-3.3). Vide par défaut. */
+  readonly offers: readonly Offer[];
 }

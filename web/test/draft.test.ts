@@ -38,6 +38,7 @@ function makeBusinessDraft(overrides: Partial<BusinessDraft> = {}): BusinessDraf
     capitalInjection: 0,
     propertyPurchase: null,
     saleDecision: null,
+    offerActions: [],
     ...overrides,
   };
 }
@@ -258,5 +259,113 @@ describe("draft — helpers purs", () => {
     expect(state.businesses).toHaveLength(0);
     expect(currentDraft.businesses).toHaveLength(0);
     expect(currentDraft.timeAllocation.business).toBe(0);
+  });
+});
+
+describe("draft — offres (spec M11.2 §3.4)", () => {
+  it("buildBusinessAction source decisions.price depuis la première offre lancée de l'entreprise", () => {
+    let state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [SERVICE_MARKET]);
+    const offerId = "svc-1-offer-1";
+    const createDraft: MonthDraft = {
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
+      job: null,
+      businesses: [
+        makeBusinessDraft({
+          offerActions: [
+            { kind: "create", spec: { id: offerId, name: "Offre Test", businessModel: "service-hours", positioning: "standard", targetSegment: "Particuliers", price: 55 } },
+            { kind: "launch", offerId },
+          ],
+        }),
+      ],
+    };
+    state = simulateMonth(state, buildMonthActions(createDraft), SEED);
+    const nextDraft = deriveNextDraft(createDraft, state);
+
+    const actions = buildMonthActions(nextDraft, state);
+    const decisions = actions.businessActions[0]!.decisions;
+    if (decisions?.family !== "service") throw new Error("devrait rester 'service'");
+    expect(decisions.price).toBe(55);
+  });
+
+  it("aucune offre lancée -> decisions.price vaut 0", () => {
+    const draft: MonthDraft = { timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 }, job: null, businesses: [makeBusinessDraft()] };
+    const actions = buildMonthActions(draft, null);
+    const decisions = actions.businessActions[0]!.decisions;
+    if (decisions?.family !== "service") throw new Error("devrait rester 'service'");
+    expect(decisions.price).toBe(0);
+  });
+
+  it("deux offres lancées -> la première par ordre de création détermine le prix", () => {
+    let state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [SERVICE_MARKET]);
+    const firstId = "svc-1-offer-first";
+    const secondId = "svc-1-offer-second";
+    const createDraft: MonthDraft = {
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
+      job: null,
+      businesses: [
+        makeBusinessDraft({
+          offerActions: [
+            { kind: "create", spec: { id: firstId, name: "Première offre", businessModel: "service-hours", positioning: "standard", targetSegment: "A", price: 10 } },
+            { kind: "launch", offerId: firstId },
+            { kind: "create", spec: { id: secondId, name: "Seconde offre", businessModel: "service-hours", positioning: "standard", targetSegment: "B", price: 999 } },
+            { kind: "launch", offerId: secondId },
+          ],
+        }),
+      ],
+    };
+    state = simulateMonth(state, buildMonthActions(createDraft), SEED);
+    const nextDraft = deriveNextDraft(createDraft, state);
+
+    const actions = buildMonthActions(nextDraft, state);
+    const decisions = actions.businessActions[0]!.decisions;
+    if (decisions?.family !== "service") throw new Error("devrait rester 'service'");
+    expect(decisions.price).toBe(10);
+  });
+
+  it("les offerActions du brouillon sont incluses dans la BusinessAction construite", () => {
+    const draft: MonthDraft = {
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
+      job: null,
+      businesses: [
+        makeBusinessDraft({
+          offerActions: [{ kind: "develop", offerId: "some-offer", hours: 10, budget: 100 }],
+        }),
+      ],
+    };
+    const actions = buildMonthActions(draft, null);
+    expect(actions.businessActions[0]!.offerActions).toEqual([{ kind: "develop", offerId: "some-offer", hours: 10, budget: 100 }]);
+  });
+
+  it("deriveNextDraft vide offerActions après résolution", () => {
+    const state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [SERVICE_MARKET]);
+    const previousDraft: MonthDraft = {
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
+      job: null,
+      businesses: [
+        makeBusinessDraft({
+          offerActions: [
+            { kind: "create", spec: { id: "svc-1-offer-x", name: "Offre X", businessModel: "service-hours", positioning: "standard", targetSegment: "A", price: 10 } },
+          ],
+        }),
+      ],
+    };
+    const created = simulateMonth(state, buildMonthActions(previousDraft), SEED);
+    const nextDraft = deriveNextDraft(previousDraft, created);
+    expect(nextDraft.businesses[0]!.offerActions).toEqual([]);
+  });
+
+  it("draftValidationError compte les heures de développement d'offre dans le budget business", () => {
+    const draft: MonthDraft = {
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 50, reseau: 0 },
+      job: null,
+      businesses: [
+        makeBusinessDraft({
+          founderHoursAllocated: 30,
+          prospectionHours: 0,
+          offerActions: [{ kind: "develop", offerId: "some-offer", hours: 30, budget: 0 }], // 30 + 30 = 60 > 50
+        }),
+      ],
+    };
+    expect(draftValidationError(draft)).toMatch(/production/i);
   });
 });

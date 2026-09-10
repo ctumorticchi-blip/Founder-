@@ -33,6 +33,10 @@ describe("Cycle de vie d'une entreprise", () => {
     const save = loadSave()!;
     expect(save.gameState.businesses).toHaveLength(1);
     expect(save.gameState.businesses[0]!.familyState.family).toBe("service");
-    expect(save.gameState.businesses[0]!.lastStatement!.revenue).toBeGreaterThan(0);
+    // Depuis M11.2.1 (Offer Engine) : sans offre construite ET lancée, une
+    // entreprise ne vend rien (le prix n'est plus un champ libre, il vient
+    // de l'offre active — spec M11.2 §3.4). Le parcours "construire puis
+    // lancer une offre" est couvert par offerFlow.test.tsx.
+    expect(save.gameState.businesses[0]!.lastStatement!.revenue).toBe(0);
   });
 });
