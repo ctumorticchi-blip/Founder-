@@ -53,4 +53,32 @@ export interface SegmentCustomerMemory {
   readonly consecutiveBadMonths: number;
   /** `null` tant qu'aucune vente n'a jamais eu lieu pour ce segment. */
   readonly monthsSinceFirstSale: number | null;
+  /** Demande récurrente calculée ce mois-ci par `computeRepeatDemand`, AVANT allocation de capacité (spec M11.2.3.1 §2). */
+  readonly repeatDemandThisMonth: number;
+  /** Part de `repeatDemandThisMonth` non servie faute de capacité (spec M11.2.3.1 §3-4) — jamais assimilée à une mauvaise expérience. */
+  readonly unservedRepeatDemandThisMonth: number;
+  /** Frustration de disponibilité lissée (EWMA), 0-1 — distincte de la satisfaction (spec M11.2.3.1 §5). */
+  readonly availabilityFrustration: number;
+}
+
+/**
+ * Grandeurs nécessaires à `updateSegmentMemory` (spec M11.2.3.1 §7) : des
+ * FLUX RÉELS (nouveaux/récurrents effectivement servis), jamais un volume
+ * agrégé à reclasser après coup — cette reclassification était le défaut
+ * architectural corrigé par M11.2.3.1 (spec §0).
+ */
+export interface SegmentMemoryUpdateInput {
+  readonly segmentId: string;
+  readonly segmentLabel: string;
+  /** Nouveaux clients EFFECTIVEMENT SERVIS ce mois-ci (flux réel, spec §9). */
+  readonly newVolumeThisMonth: number;
+  /** Clients récurrents EFFECTIVEMENT SERVIS ce mois-ci (flux réel, spec §9). */
+  readonly retainedVolumeThisMonth: number;
+  /** Demande récurrente calculée ce mois-ci (spec §5), avant capacité. `0` si aucune mémoire préalable ou famille sans mécanique de repeat demand (ex. Subscription, spec §12). */
+  readonly repeatDemandThisMonth: number;
+  /** Part de `repeatDemandThisMonth` refusée faute de capacité (spec §4). */
+  readonly unservedRepeatDemandThisMonth: number;
+  /** `null` si aucune vente servie ce mois-ci pour ce segment (aucune mesure de satisfaction possible). */
+  readonly satisfactionThisMonth: number | null;
+  readonly diagnosisThisMonth: SatisfactionDiagnosis | null;
 }

@@ -30,6 +30,7 @@ import { computeSegmentExpectation } from "../customer/expectations.js";
 import { computeDeliveredExperience, computeOperationalPenalty } from "../customer/experience.js";
 import { computeSatisfaction } from "../customer/satisfaction.js";
 import {
+  computeRepeatDemand,
   computeReputationUpdate,
   computeSubscriptionChurnAdjustment,
   computeWordOfMouth,
@@ -149,60 +150,107 @@ function aggregateWordOfMouthInputs(memory: readonly SegmentCustomerMemory[]): {
   return { satisfaction, volume };
 }
 
-interface OfferSatisfactionOutcome {
+interface OfferOutcome {
   readonly updatedMemory: readonly SegmentCustomerMemory[];
   readonly volumeForReputation: number;
   readonly satisfactionForReputation: number;
 }
 
+/** Aucune mécanique de repeat demand transactionnel pour Subscription (spec M11.2.3.1 §8, §12) — réutilisée telle quelle, jamais recréée par appel. */
+const EMPTY_REPEAT_DEMAND: ReadonlyMap<string, number> = new Map();
+
+/** Demande de réachat par segment, calculée depuis la mémoire PRÉALABLE de l'offre (spec M11.2.3.1 §2-§3). `Map` vide pour une famille sans mécanique de repeat demand (Subscription, spec §12). */
+function computeRepeatDemandBySegment(customerMemory: readonly SegmentCustomerMemory[]): ReadonlyMap<string, number> {
+  return new Map(customerMemory.map((m) => [m.segmentId, computeRepeatDemand(m)]));
+}
+
 /**
- * Ventile les ventes réelles d'une offre par segment (proportionnel à la
- * part de demande de chaque segment — spec M11.2.3 §7, aucune resimulation
- * du moteur économique) et met à jour la mémoire client de chaque segment.
- * `deliveredExperience` est déjà calculée par l'appelant (la pression
- * opérationnelle diffère selon la famille — spec §4).
+ * Demande totale (nouvelle + récurrente) d'une offre ce mois-ci (spec
+ * M11.2.3.1 §1, §3) : `newDemand` vient de `computeOfferDemand` (M11.2.2,
+ * inchangé), `repeatDemand` de la mémoire client préalable. C'est cette
+ * somme — jamais `funnel.demand` seul — qui doit désormais être opposée à
+ * la capacité de la famille.
  */
-function resolveOfferSatisfaction(
+function computeTotalDemand(
+  funnel: Omit<DemandFunnelResult, "capacity" | "sales" | "lostToCapacity">,
+  repeatDemandBySegment: ReadonlyMap<string, number>,
+): number {
+  return funnel.bySegment.reduce((sum, s) => sum + s.demand + (repeatDemandBySegment.get(s.segmentId) ?? 0), 0);
+}
+
+/**
+ * Ventile les ventes réelles ET les ventes perdues d'une offre entre
+ * segments, puis entre clients nouveaux/récurrents au sein de chaque
+ * segment — allocation proportionnelle pure, aucune priorité cachée entre
+ * nouveaux et habitués (spec M11.2.3.1 §3, §6). Jamais de resimulation du
+ * moteur économique : `totalSales`/`totalLostToCapacity` sont déjà
+ * entièrement déterminés par l'appelant. Met à jour la mémoire client de
+ * chaque segment avec des FLUX RÉELS (spec §7, §9) — plus de
+ * reclassification après coup. `deliveredExperience`/`operationalPenalty`
+ * sont déjà calculées par l'appelant (la pression opérationnelle diffère
+ * selon la famille — spec M11.2.3 §4). La satisfaction reste calculée
+ * UNIQUEMENT sur les clients réellement servis (spec §10) — jamais sur la
+ * demande récurrente refusée.
+ */
+function resolveOfferOutcome(
   offer: Offer,
   segments: readonly CustomerSegment[],
   funnel: Omit<DemandFunnelResult, "capacity" | "sales" | "lostToCapacity">,
+  repeatDemandBySegment: ReadonlyMap<string, number>,
   deliveredExperience: number,
   operationalPenalty: number,
-  actualSales: number,
+  totalSales: number,
+  totalLostToCapacity: number,
   reputationScore: number,
-): OfferSatisfactionOutcome {
-  const totalSegmentDemand = funnel.bySegment.reduce((sum, s) => sum + s.demand, 0) || 1;
+): OfferOutcome {
   const segmentById = new Map(segments.map((s) => [s.id, s]));
   const priorMemoryById = new Map(offer.customerMemory.map((m) => [m.segmentId, m]));
+  const totalDemand = computeTotalDemand(funnel, repeatDemandBySegment);
 
   const satisfactionEntries: { value: number; weight: number }[] = [];
 
   const updatedMemory: SegmentCustomerMemory[] = funnel.bySegment.map((seg) => {
-    const segmentSales = actualSales * (seg.demand / totalSegmentDemand);
+    const newDemandForSegment = seg.demand;
+    const repeatDemandForSegment = repeatDemandBySegment.get(seg.segmentId) ?? 0;
+    const segmentTotalDemand = newDemandForSegment + repeatDemandForSegment;
+
+    const share = totalDemand > 0 ? segmentTotalDemand / totalDemand : 0;
+    const segmentSales = totalSales * share;
+    const segmentLost = totalLostToCapacity * share;
+    const newShare = segmentTotalDemand > 0 ? newDemandForSegment / segmentTotalDemand : 0;
+
+    const newVolumeThisMonth = segmentSales * newShare;
+    const retainedVolumeThisMonth = segmentSales * (1 - newShare);
+    const unservedRepeatDemandThisMonth = segmentLost * (1 - newShare);
+
     const segment = segmentById.get(seg.segmentId);
     let satisfactionThisMonth: number | null = null;
     let diagnosisThisMonth = null as ReturnType<typeof computeSatisfaction>["diagnosis"] | null;
-    if (segmentSales > 0 && segment) {
+    const totalServed = newVolumeThisMonth + retainedVolumeThisMonth;
+    if (totalServed > 0 && segment) {
       const expectation = computeSegmentExpectation(offer, segment, reputationScore);
       const priceRatio = offer.price / segment.referencePrice;
       const result = computeSatisfaction(expectation, deliveredExperience, priceRatio, operationalPenalty);
       satisfactionThisMonth = result.score;
       diagnosisThisMonth = result.diagnosis;
-      satisfactionEntries.push({ value: result.score, weight: segmentSales });
+      satisfactionEntries.push({ value: result.score, weight: totalServed });
     }
-    return updateSegmentMemory(
-      priorMemoryById.get(seg.segmentId) ?? null,
-      seg.segmentId,
-      seg.segmentLabel,
-      segmentSales,
+
+    return updateSegmentMemory(priorMemoryById.get(seg.segmentId) ?? null, {
+      segmentId: seg.segmentId,
+      segmentLabel: seg.segmentLabel,
+      newVolumeThisMonth,
+      retainedVolumeThisMonth,
+      repeatDemandThisMonth: repeatDemandForSegment,
+      unservedRepeatDemandThisMonth,
       satisfactionThisMonth,
       diagnosisThisMonth,
-    );
+    });
   });
 
   return {
     updatedMemory,
-    volumeForReputation: actualSales,
+    volumeForReputation: totalSales,
     satisfactionForReputation: volumeWeightedSatisfaction(satisfactionEntries),
   };
 }
@@ -342,26 +390,43 @@ export function resolveBusinessMonth(
           date,
           organicWordOfMouth,
         });
+        // Demande totale = acquisition (M11.2.2, inchangée) + réachat réel de la base
+        // client existante (spec M11.2.3.1 §1-§3) — c'est elle, jamais la seule
+        // demande d'acquisition, qui doit désormais être opposée à la capacité.
+        const repeatDemandBySegment = computeRepeatDemandBySegment(offer.customerMemory);
+        const totalDemand = computeTotalDemand(funnel, repeatDemandBySegment);
         const capacityForOffer = remainingCapacityHours;
         const contribution = computeServiceMonth(
           { hourlyRate: offer.price, costPerLaborHour: state.costPerLaborHour, reputationScore: state.reputationScore },
-          { capacityHours: capacityForOffer, targetHours: funnel.demand },
+          { capacityHours: capacityForOffer, targetHours: totalDemand },
           { rng: rng.fork(`business:${owned.id}:service:${offer.id}`) },
         );
         totalRevenue += contribution.revenue;
         totalVariableCosts += contribution.variableCosts;
         remainingCapacityHours = Math.max(0, remainingCapacityHours - contribution.hoursSold);
+        const lostToCapacity = Math.max(0, totalDemand - capacityForOffer);
         demandById.set(offer.id, {
           ...funnel,
+          demand: totalDemand,
           capacity: capacityForOffer,
           sales: contribution.hoursSold,
-          lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
+          lostToCapacity,
         });
 
-        const saturationRatio = capacityForOffer > 0 ? funnel.demand / capacityForOffer : funnel.demand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const saturationRatio = capacityForOffer > 0 ? totalDemand / capacityForOffer : totalDemand > 0 ? Number.POSITIVE_INFINITY : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
-        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, contribution.hoursSold, state.reputationScore);
+        const outcome = resolveOfferOutcome(
+          offer,
+          segments,
+          funnel,
+          repeatDemandBySegment,
+          deliveredExperience,
+          operationalPenalty,
+          contribution.hoursSold,
+          lostToCapacity,
+          state.reputationScore,
+        );
         memoryById.set(offer.id, outcome.updatedMemory);
         totalVolumeForReputation += outcome.volumeForReputation;
         reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });
@@ -408,26 +473,40 @@ export function resolveBusinessMonth(
           date,
           organicWordOfMouth,
         });
+        const repeatDemandBySegment = computeRepeatDemandBySegment(offer.customerMemory);
+        const totalDemand = computeTotalDemand(funnel, repeatDemandBySegment);
         const capacityForOffer = remainingCoversCapacity;
         const contribution = computeHospitalityMonth(
           { averageTicketPrice: offer.price, foodCostPerCover: state.foodCostPerCover, reputationScore: state.reputationScore },
-          { coversCapacity: capacityForOffer, expectedDemandCovers: funnel.demand },
+          { coversCapacity: capacityForOffer, expectedDemandCovers: totalDemand },
           { rng: rng.fork(`business:${owned.id}:hospitality:${offer.id}`) },
         );
         totalRevenue += contribution.revenue;
         totalVariableCosts += contribution.variableCosts;
         remainingCoversCapacity = Math.max(0, remainingCoversCapacity - contribution.coversServed);
+        const lostToCapacity = Math.max(0, totalDemand - capacityForOffer);
         demandById.set(offer.id, {
           ...funnel,
+          demand: totalDemand,
           capacity: capacityForOffer,
           sales: contribution.coversServed,
-          lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
+          lostToCapacity,
         });
 
-        const saturationRatio = capacityForOffer > 0 ? funnel.demand / capacityForOffer : funnel.demand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const saturationRatio = capacityForOffer > 0 ? totalDemand / capacityForOffer : totalDemand > 0 ? Number.POSITIVE_INFINITY : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
-        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, contribution.coversServed, state.reputationScore);
+        const outcome = resolveOfferOutcome(
+          offer,
+          segments,
+          funnel,
+          repeatDemandBySegment,
+          deliveredExperience,
+          operationalPenalty,
+          contribution.coversServed,
+          lostToCapacity,
+          state.reputationScore,
+        );
         memoryById.set(offer.id, outcome.updatedMemory);
         totalVolumeForReputation += outcome.volumeForReputation;
         reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });
@@ -519,8 +598,12 @@ export function resolveBusinessMonth(
         const funnel = funnelById.get(offer.id)!;
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         // Pas de plafond de capacité par offre en Subscription (spec §6.2) :
-        // toute la demande captée est réputée servie.
-        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, funnel.demand, state.reputationScore);
+        // toute la demande captée est réputée servie. Pas de repeat demand
+        // transactionnel non plus (spec M11.2.3.1 §8, §12) : la vraie
+        // mécanique de rétention de Subscription est `activeSubscribers`
+        // (acquisition/churn ci-dessus), pas cette mémoire par segment — la
+        // `Map` vide fait absorber 100% du flux par `newVolumeThisMonth`.
+        const outcome = resolveOfferOutcome(offer, segments, funnel, EMPTY_REPEAT_DEMAND, deliveredExperience, operationalPenalty, funnel.demand, 0, state.reputationScore);
         memoryById.set(offer.id, outcome.updatedMemory);
         totalVolumeForReputation += outcome.volumeForReputation;
         reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });
@@ -568,26 +651,40 @@ export function resolveBusinessMonth(
           date,
           organicWordOfMouth,
         });
+        const repeatDemandBySegment = computeRepeatDemandBySegment(offer.customerMemory);
+        const totalDemand = computeTotalDemand(funnel, repeatDemandBySegment);
         const capacityForOffer = remainingCapacityUnits;
         const contribution = RetailEngine.computeMonth(
           { unitPrice: offer.price, unitCostOfGoods: state.unitCostOfGoods, reputationScore: state.reputationScore },
-          { stockUnits: capacityForOffer, expectedFootTraffic: funnel.demand },
+          { stockUnits: capacityForOffer, expectedFootTraffic: totalDemand },
           { rng: rng.fork(`business:${owned.id}:retail:${offer.id}`) },
         );
         totalRevenue += contribution.revenue;
         totalVariableCosts += contribution.variableCosts;
         remainingCapacityUnits = Math.max(0, remainingCapacityUnits - contribution.unitsSold);
+        const lostToCapacity = Math.max(0, totalDemand - capacityForOffer);
         demandById.set(offer.id, {
           ...funnel,
+          demand: totalDemand,
           capacity: capacityForOffer,
           sales: contribution.unitsSold,
-          lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
+          lostToCapacity,
         });
 
-        const saturationRatio = capacityForOffer > 0 ? funnel.demand / capacityForOffer : funnel.demand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const saturationRatio = capacityForOffer > 0 ? totalDemand / capacityForOffer : totalDemand > 0 ? Number.POSITIVE_INFINITY : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
-        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, contribution.unitsSold, state.reputationScore);
+        const outcome = resolveOfferOutcome(
+          offer,
+          segments,
+          funnel,
+          repeatDemandBySegment,
+          deliveredExperience,
+          operationalPenalty,
+          contribution.unitsSold,
+          lostToCapacity,
+          state.reputationScore,
+        );
         memoryById.set(offer.id, outcome.updatedMemory);
         totalVolumeForReputation += outcome.volumeForReputation;
         reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });
@@ -634,6 +731,8 @@ export function resolveBusinessMonth(
           date,
           organicWordOfMouth,
         });
+        const repeatDemandBySegment = computeRepeatDemandBySegment(offer.customerMemory);
+        const totalDemand = computeTotalDemand(funnel, repeatDemandBySegment);
         const capacityForOffer = remainingCapacityMandates;
         const contribution = AgencyEngine.computeMonth(
           {
@@ -645,23 +744,35 @@ export function resolveBusinessMonth(
             reputationScore: state.reputationScore,
             skillFactor: clamp(founderLeadershipSkill / 100, 0, 1),
           },
-          { capacityMandates: capacityForOffer, targetMandates: funnel.demand },
+          { capacityMandates: capacityForOffer, targetMandates: totalDemand },
           { rng: rng.fork(`business:${owned.id}:agency:${offer.id}`) },
         );
         totalRevenue += contribution.revenue;
         totalVariableCosts += contribution.variableCosts;
         remainingCapacityMandates = Math.max(0, remainingCapacityMandates - contribution.wonMandates);
+        const lostToCapacity = Math.max(0, totalDemand - capacityForOffer);
         demandById.set(offer.id, {
           ...funnel,
+          demand: totalDemand,
           capacity: capacityForOffer,
           sales: contribution.wonMandates,
-          lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
+          lostToCapacity,
         });
 
-        const saturationRatio = capacityForOffer > 0 ? funnel.demand / capacityForOffer : funnel.demand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const saturationRatio = capacityForOffer > 0 ? totalDemand / capacityForOffer : totalDemand > 0 ? Number.POSITIVE_INFINITY : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
-        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, contribution.wonMandates, state.reputationScore);
+        const outcome = resolveOfferOutcome(
+          offer,
+          segments,
+          funnel,
+          repeatDemandBySegment,
+          deliveredExperience,
+          operationalPenalty,
+          contribution.wonMandates,
+          lostToCapacity,
+          state.reputationScore,
+        );
         memoryById.set(offer.id, outcome.updatedMemory);
         totalVolumeForReputation += outcome.volumeForReputation;
         reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });

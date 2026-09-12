@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../../../src/engine/rng/rng.js";
 import { createOwnedBusiness, resolveBusinessMonth, wordOfMouthReferenceVolume } from "../../../src/engine/simulation/businessResolution.js";
-import type { BusinessAction, CreateBusinessSpec } from "../../../src/engine/simulation/types.js";
+import type { BusinessAction, CreateBusinessSpec, OwnedBusiness } from "../../../src/engine/simulation/types.js";
 import type { Market } from "../../../src/types/market.js";
-import type { OfferAction } from "../../../src/types/offer.js";
+import type { Offer, OfferAction } from "../../../src/types/offer.js";
+import type { SegmentCustomerMemory } from "../../../src/types/satisfaction.js";
 
 const SERVICE_SPEC: CreateBusinessSpec = {
   family: "service",
@@ -242,6 +243,129 @@ describe("wordOfMouthReferenceVolume (spec M11.2.3 §9, §10, §15)", () => {
     expect(wordOfMouthReferenceVolume("subscription", 5)).toBe(wordOfMouthReferenceVolume("subscription", 0));
     // Au-delà du plancher, la référence suit réellement la base d'abonnés.
     expect(wordOfMouthReferenceVolume("subscription", 10_000)).toBeGreaterThan(wordOfMouthReferenceVolume("subscription", 5));
+  });
+});
+
+describe("allocation new/repeat — capacité proportionnelle, aucune priorité cachée (spec M11.2.3.1 §3, §6)", () => {
+  const SEGMENT_ID = "service-professionnels-locaux";
+
+  function seededMemory(overrides: Partial<SegmentCustomerMemory> = {}): SegmentCustomerMemory {
+    return {
+      segmentId: SEGMENT_ID,
+      segmentLabel: "Professionnels locaux",
+      retainedBaseVolume: 300,
+      newVolumeThisMonth: 0,
+      retainedVolumeThisMonth: 0,
+      cumulativeAcquiredVolume: 300,
+      lastSatisfactionScore: 90,
+      smoothedSatisfactionScore: 90,
+      lastDiagnosis: null,
+      consecutiveGoodMonths: 3,
+      consecutiveBadMonths: 0,
+      monthsSinceFirstSale: 6,
+      repeatDemandThisMonth: 0,
+      unservedRepeatDemandThisMonth: 0,
+      availabilityFrustration: 0,
+      ...overrides,
+    };
+  }
+
+  function offerWithMemory(memory: readonly SegmentCustomerMemory[]): Offer {
+    return {
+      id: "svc-offer",
+      name: "Prestations",
+      businessModel: "service-hours",
+      positioning: "standard",
+      targetSegment: "",
+      price: 40,
+      status: "launched",
+      maturity: 100,
+      qualityLevel: 80,
+      developmentHoursInvested: 0,
+      developmentBudgetInvested: 0,
+      createdAt: DATE,
+      launchedAt: DATE,
+      lastDemand: null,
+      customerMemory: memory,
+    };
+  }
+
+  function withOffer(owned: OwnedBusiness, offer: Offer): OwnedBusiness {
+    return { ...owned, business: { ...owned.business, offers: [offer] } };
+  }
+
+  it("capacité largement suffisante : la demande récurrente calculée depuis la mémoire est bien positive et intégralement servie", () => {
+    const owned = withOffer(createOwnedBusiness("svc", SERVICE_SPEC), offerWithMemory([seededMemory()]));
+    const action = serviceAction({ offerActions: [], targetHeadcount: 20 }); // large capacité, demande de marché infime pour isoler le repeat.
+    const result = resolveBusinessMonth(owned, action, TINY_DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SERVICE_MARKET);
+
+    const memory = result.updated.business.offers[0]!.customerMemory.find((m) => m.segmentId === SEGMENT_ID)!;
+    expect(memory.repeatDemandThisMonth).toBeGreaterThan(0);
+    // Capacité largement suffisante -> quasiment toute la demande récurrente est servie.
+    expect(memory.unservedRepeatDemandThisMonth).toBeLessThan(memory.repeatDemandThisMonth * 0.05);
+    expect(memory.retainedVolumeThisMonth).toBeGreaterThan(0);
+  });
+
+  it("capacité insuffisante : l'allocation nouveaux/récurrents reste proportionnelle à la demande, sans priorité cachée", () => {
+    const owned = withOffer(createOwnedBusiness("svc", SERVICE_SPEC), offerWithMemory([seededMemory({ retainedBaseVolume: 2_000, smoothedSatisfactionScore: 95 })]));
+    // Forte demande de marché (part significative) + capacité minuscule : les deux
+    // flux (nouveaux ET récurrents) se disputent une capacité largement insuffisante.
+    const action = serviceAction({ offerActions: [], founderHoursAllocated: 5, targetHeadcount: 0 });
+    const result = resolveBusinessMonth(owned, action, 1, LEADERSHIP_SKILL, createRng(1), DATE, SERVICE_MARKET);
+
+    const finalOffer = result.updated.business.offers[0]!;
+    const memory = finalOffer.customerMemory.find((m) => m.segmentId === SEGMENT_ID)!;
+    const lastDemand = finalOffer.lastDemand!;
+
+    expect(lastDemand.lostToCapacity).toBeGreaterThan(0);
+    expect(memory.unservedRepeatDemandThisMonth).toBeGreaterThan(0);
+
+    // newSales + repeatSales, SOMMÉS SUR TOUS LES SEGMENTS (le marché "service" en
+    // compte 4, un seul a une mémoire préalable) = ventes réelles totales de l'offre.
+    const totalNewPlusRetained = finalOffer.customerMemory.reduce((sum, m) => sum + m.newVolumeThisMonth + m.retainedVolumeThisMonth, 0);
+    expect(totalNewPlusRetained).toBeCloseTo(lastDemand.sales, 6);
+  });
+
+  it("un client récurrent servi est compté comme récurrent, jamais comme nouveau", () => {
+    const owned = withOffer(createOwnedBusiness("svc", SERVICE_SPEC), offerWithMemory([seededMemory()]));
+    const action = serviceAction({ offerActions: [], targetHeadcount: 20 });
+    const result = resolveBusinessMonth(owned, action, TINY_DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SERVICE_MARKET);
+
+    const memory = result.updated.business.offers[0]!.customerMemory.find((m) => m.segmentId === SEGMENT_ID)!;
+    // Demande de marché infime (TINY_DEMAND_SHARE) : les ventes viennent quasi exclusivement du réachat.
+    expect(memory.retainedVolumeThisMonth).toBeGreaterThan(memory.newVolumeThisMonth);
+  });
+
+  it("un client récurrent non servi (capacité insuffisante) n'est jamais compté comme un nouveau client", () => {
+    const before = seededMemory({ retainedBaseVolume: 2_000, smoothedSatisfactionScore: 95 });
+    const owned = withOffer(createOwnedBusiness("svc", SERVICE_SPEC), offerWithMemory([before]));
+    const action = serviceAction({ offerActions: [], founderHoursAllocated: 5, targetHeadcount: 0 });
+    const result = resolveBusinessMonth(owned, action, TINY_DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SERVICE_MARKET);
+
+    const memory = result.updated.business.offers[0]!.customerMemory.find((m) => m.segmentId === SEGMENT_ID)!;
+    expect(memory.unservedRepeatDemandThisMonth).toBeGreaterThan(0);
+    // Demande de marché infime : le cumul de nouveaux clients ne doit quasiment pas bouger,
+    // et surtout jamais être gonflé par les habitués refusés.
+    expect(memory.cumulativeAcquiredVolume).toBeCloseTo(before.cumulativeAcquiredVolume, 1);
+  });
+
+  it("un client récurrent non servi n'est pas automatiquement considéré comme insatisfait", () => {
+    // Capacité tout juste sous la demande totale (spec §4) : une part réelle mais
+    // MODESTE de demande récurrente est refusée, sans faire exploser la pénalité
+    // opérationnelle (`SATURATION_COMFORT_THRESHOLD`) qui dégraderait l'expérience
+    // des clients SERVIS — ce qui isole bien "refusé" de "mal servi" (deux signaux
+    // distincts, spec §4 ; calibré empiriquement pour ce fixture de mémoire).
+    const owned = withOffer(createOwnedBusiness("svc", SERVICE_SPEC), offerWithMemory([seededMemory({ retainedBaseVolume: 1_000, smoothedSatisfactionScore: 95 })]));
+    const action = serviceAction({ offerActions: [], founderHoursAllocated: 920, targetHeadcount: 0 });
+    const result = resolveBusinessMonth(owned, action, TINY_DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SERVICE_MARKET);
+
+    const memory = result.updated.business.offers[0]!.customerMemory.find((m) => m.segmentId === SEGMENT_ID)!;
+    expect(memory.unservedRepeatDemandThisMonth).toBeGreaterThan(0);
+    // Les clients SERVIS restent globalement satisfaits : la satisfaction ne
+    // s'effondre jamais uniquement à cause des clients refusés ailleurs.
+    if (memory.lastSatisfactionScore !== null) {
+      expect(memory.lastSatisfactionScore).toBeGreaterThan(60);
+    }
   });
 });
 

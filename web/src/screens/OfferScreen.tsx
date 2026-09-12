@@ -169,6 +169,14 @@ export function OfferScreen({ businessId, offerId }: { readonly businessId: stri
             <span className="text-sm text-secondary">Clients récurrents</span>
             <span className="text-sm" style={{ fontWeight: 700 }}>{Math.round(customerSummary.recurrentThisMonth).toLocaleString("fr-FR")}</span>
           </div>
+          {customerSummary.unservedThisMonth > 0 ? (
+            <div className="row row--between">
+              <span className="text-sm text-secondary">Non servis</span>
+              <span className="text-sm" style={{ fontWeight: 700, color: "var(--danger)" }}>
+                {Math.round(customerSummary.unservedThisMonth).toLocaleString("fr-FR")}
+              </span>
+            </div>
+          ) : null}
           <div className="row row--between">
             <span className="text-sm text-secondary">Satisfaction</span>
             <span className="text-sm" style={{ fontWeight: 700 }}>{satisfactionLevelLabel(customerSummary.satisfactionLevel)}</span>

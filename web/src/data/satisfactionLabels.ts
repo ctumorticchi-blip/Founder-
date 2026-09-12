@@ -89,6 +89,7 @@ export function activeDiagnosisLines(diagnosis: SatisfactionDiagnosis): readonly
 export interface CustomerSummary {
   readonly newThisMonth: number;
   readonly recurrentThisMonth: number;
+  readonly unservedThisMonth: number;
   readonly satisfactionLevel: SatisfactionLevel;
   readonly fidelityTrend: FidelityTrend;
 }
@@ -99,6 +100,7 @@ export function summarizeCustomerMemory(memories: readonly SegmentCustomerMemory
 
   const newThisMonth = memories.reduce((sum, m) => sum + m.newVolumeThisMonth, 0);
   const recurrentThisMonth = memories.reduce((sum, m) => sum + m.retainedVolumeThisMonth, 0);
+  const unservedThisMonth = memories.reduce((sum, m) => sum + m.unservedRepeatDemandThisMonth, 0);
 
   const totalVolume = memories.reduce((sum, m) => sum + m.retainedBaseVolume, 0);
   const weightedScore =
@@ -118,6 +120,7 @@ export function summarizeCustomerMemory(memories: readonly SegmentCustomerMemory
   return {
     newThisMonth,
     recurrentThisMonth,
+    unservedThisMonth,
     satisfactionLevel: bucketSatisfactionLevel(weightedScore),
     fidelityTrend,
   };

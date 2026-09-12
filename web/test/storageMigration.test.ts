@@ -256,6 +256,118 @@ describe("migrateSaveGame", () => {
     expect(migratedTwice).toEqual(migratedOnce);
   });
 
+  it("une sauvegarde M11.2.3 (customerMemory sans les champs de repeat demand/frustration) complète chaque entrée à 0 sans fabriquer d'historique (spec M11.2.3.1 §7)", () => {
+    const legacyM1123Save = {
+      ...LEGACY_M10_SAVE,
+      gameState: {
+        ...LEGACY_M10_SAVE.gameState,
+        businesses: [
+          {
+            ...LEGACY_M10_SAVE.gameState.businesses[0]!,
+            business: {
+              ...LEGACY_M10_SAVE.gameState.businesses[0]!.business,
+              offers: [
+                {
+                  id: "service-abc123-offer-1",
+                  name: "Offre M11.2.3",
+                  businessModel: "service-hours",
+                  positioning: "standard",
+                  targetSegment: "Particuliers",
+                  price: 45,
+                  status: "launched",
+                  maturity: 100,
+                  qualityLevel: 60,
+                  developmentHoursInvested: 0,
+                  developmentBudgetInvested: 0,
+                  createdAt: { year: 2025, month: 3 },
+                  launchedAt: { year: 2025, month: 3 },
+                  lastDemand: null,
+                  customerMemory: [
+                    {
+                      segmentId: "seg-1",
+                      segmentLabel: "Particuliers",
+                      retainedBaseVolume: 42,
+                      newVolumeThisMonth: 10,
+                      retainedVolumeThisMonth: 32,
+                      cumulativeAcquiredVolume: 100,
+                      lastSatisfactionScore: 70,
+                      smoothedSatisfactionScore: 70,
+                      lastDiagnosis: null,
+                      consecutiveGoodMonths: 1,
+                      consecutiveBadMonths: 0,
+                      monthsSinceFirstSale: 5,
+                      // repeatDemandThisMonth/unservedRepeatDemandThisMonth/availabilityFrustration absents : sauvegarde antérieure à M11.2.3.1.
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const migrated = migrateSaveGame(legacyM1123Save);
+    const memory = migrated.gameState.businesses[0]!.business.offers[0]!.customerMemory[0]!;
+    expect(memory.repeatDemandThisMonth).toBe(0);
+    expect(memory.unservedRepeatDemandThisMonth).toBe(0);
+    expect(memory.availabilityFrustration).toBe(0);
+    expect(memory.retainedBaseVolume).toBe(42); // valeur existante jamais modifiée
+  });
+
+  it("la migration M11.2.3.1 est idempotente (customerMemory stable sur double passage)", () => {
+    const legacyM1123Save = {
+      ...LEGACY_M10_SAVE,
+      gameState: {
+        ...LEGACY_M10_SAVE.gameState,
+        businesses: [
+          {
+            ...LEGACY_M10_SAVE.gameState.businesses[0]!,
+            business: {
+              ...LEGACY_M10_SAVE.gameState.businesses[0]!.business,
+              offers: [
+                {
+                  id: "service-abc123-offer-1",
+                  name: "Offre M11.2.3",
+                  businessModel: "service-hours",
+                  positioning: "standard",
+                  targetSegment: "Particuliers",
+                  price: 45,
+                  status: "launched",
+                  maturity: 100,
+                  qualityLevel: 60,
+                  developmentHoursInvested: 0,
+                  developmentBudgetInvested: 0,
+                  createdAt: { year: 2025, month: 3 },
+                  launchedAt: { year: 2025, month: 3 },
+                  lastDemand: null,
+                  customerMemory: [
+                    {
+                      segmentId: "seg-1",
+                      segmentLabel: "Particuliers",
+                      retainedBaseVolume: 42,
+                      newVolumeThisMonth: 10,
+                      retainedVolumeThisMonth: 32,
+                      cumulativeAcquiredVolume: 100,
+                      lastSatisfactionScore: 70,
+                      smoothedSatisfactionScore: 70,
+                      lastDiagnosis: null,
+                      consecutiveGoodMonths: 1,
+                      consecutiveBadMonths: 0,
+                      monthsSinceFirstSale: 5,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const migratedOnce = migrateSaveGame(legacyM1123Save);
+    const migratedTwice = migrateSaveGame(migratedOnce);
+    expect(migratedTwice).toEqual(migratedOnce);
+  });
+
   it("un lastRecap antérieur à M11.2.3 (sans businessNarratives) se charge sans crash et reçoit []", () => {
     const legacyRecapSave = {
       ...LEGACY_M10_SAVE,

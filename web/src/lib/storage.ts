@@ -6,6 +6,7 @@ import {
   type GameDate,
   type Offer,
   type OfferBusinessModel,
+  type SegmentCustomerMemory,
 } from "@founder/engine";
 import { findOpportunity } from "../data/opportunities";
 import { defaultBusinessIdentity } from "../state/businessIdentity";
@@ -107,6 +108,21 @@ function migrateFamilyState(familyState: BusinessFamilyState): BusinessFamilySta
   return familyState;
 }
 
+/**
+ * Complète une mémoire client antérieure à M11.2.3.1 avec les 3 champs de
+ * repeat demand/frustration de disponibilité (spec M11.2.3.1 §7) — jamais de
+ * valeur fabriquée : `0` signifie "aucun signal connu", cohérent avec l'état
+ * initial produit par le moteur pour une mémoire neuve.
+ */
+function migrateSegmentCustomerMemory(memory: SegmentCustomerMemory): SegmentCustomerMemory {
+  return {
+    ...memory,
+    repeatDemandThisMonth: memory.repeatDemandThisMonth ?? 0,
+    unservedRepeatDemandThisMonth: memory.unservedRepeatDemandThisMonth ?? 0,
+    availabilityFrustration: memory.availabilityFrustration ?? 0,
+  };
+}
+
 const STORAGE_KEY = "founder.save.v1";
 
 /**
@@ -152,7 +168,11 @@ export function migrateSaveGame(raw: unknown): SaveGameV1 {
             businessIdentities[owned.id]?.createdAt ?? gameStateDate,
           ),
         ]
-      ).map((offer) => ({ ...offer, lastDemand: offer.lastDemand ?? null, customerMemory: offer.customerMemory ?? [] }));
+      ).map((offer) => ({
+        ...offer,
+        lastDemand: offer.lastDemand ?? null,
+        customerMemory: (offer.customerMemory ?? []).map(migrateSegmentCustomerMemory),
+      }));
       return {
         ...owned,
         business: { ...owned.business, properties: owned.business.properties ?? [], offers },

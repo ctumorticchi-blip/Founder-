@@ -1,4 +1,4 @@
-import type { SatisfactionDiagnosis, SegmentCustomerMemory } from "../../types/satisfaction.js";
+import type { SegmentCustomerMemory, SegmentMemoryUpdateInput } from "../../types/satisfaction.js";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -18,25 +18,41 @@ export function computeRepeatRate(smoothedSatisfactionScore: number): number {
 }
 
 /**
- * Met à jour la mémoire d'un segment pour une offre après un mois résolu
- * (spec M11.2.3 §6, §8). Pure, déterministe — aucun aléa. `previous: null`
- * signifie premier contact du moteur avec ce segment pour cette offre.
- * `satisfactionThisMonth: null` signifie qu'aucune vente n'a eu lieu ce
- * mois-ci pour ce segment (aucune mesure possible).
+ * Demande de réachat réelle générée par la base client existante (spec
+ * M11.2.3.1 §2) : approche B — base retenue × propension au retour.
+ * `null` (aucun premier contact pour ce segment) -> `0`. La propension
+ * combine la satisfaction lissée (`computeRepeatRate`, inchangée) ET la
+ * frustration de disponibilité lissée (`availabilityFrustration`, spec
+ * §5) : un client satisfait mais chroniquement refusé faute de capacité
+ * finit par moins vouloir revenir. Pure, déterministe. Ne consulte jamais
+ * `computeOfferDemand` ni le marché — c'est un mécanisme de RÉTENTION,
+ * strictement distinct de l'acquisition (spec §1, §11).
  */
-export function updateSegmentMemory(
-  previous: SegmentCustomerMemory | null,
-  segmentId: string,
-  segmentLabel: string,
-  actualVolumeThisMonth: number,
-  satisfactionThisMonth: number | null,
-  diagnosisThisMonth: SatisfactionDiagnosis | null,
-): SegmentCustomerMemory {
+export function computeRepeatDemand(memory: SegmentCustomerMemory | null): number {
+  if (memory === null) return 0;
+  const propensity = computeRepeatRate(memory.smoothedSatisfactionScore) * (1 - clamp(memory.availabilityFrustration, 0, 1));
+  return memory.retainedBaseVolume * propensity;
+}
+
+/** Poids de lissage (EWMA) de la frustration de disponibilité — même ordre que la satisfaction (spec M11.2.3.1 §5, §17) : un refus ponctuel pèse peu, des refus répétés s'accumulent. */
+const AVAILABILITY_FRUSTRATION_EWMA_ALPHA = 0.3;
+
+/**
+ * Met à jour la mémoire d'un segment pour une offre après un mois résolu
+ * (spec M11.2.3 §6, §8 ; M11.2.3.1 §7, §9). Pure, déterministe — aucun
+ * aléa. `previous: null` signifie premier contact du moteur avec ce
+ * segment pour cette offre. `input.newVolumeThisMonth`/
+ * `input.retainedVolumeThisMonth` sont des FLUX RÉELS déjà déterminés par
+ * l'appelant (allocation proportionnelle en amont, spec M11.2.3.1 §3) —
+ * cette fonction ne reclasse plus jamais un volume agrégé après coup
+ * (défaut architectural corrigé, spec §0). `satisfactionThisMonth: null`
+ * signifie qu'aucune vente n'a eu lieu ce mois-ci pour ce segment (aucune
+ * mesure possible).
+ */
+export function updateSegmentMemory(previous: SegmentCustomerMemory | null, input: SegmentMemoryUpdateInput): SegmentCustomerMemory {
+  const { segmentId, segmentLabel, newVolumeThisMonth, retainedVolumeThisMonth, repeatDemandThisMonth, unservedRepeatDemandThisMonth, satisfactionThisMonth, diagnosisThisMonth } = input;
   const priorBase = previous?.retainedBaseVolume ?? 0;
-  const repeatRate = computeRepeatRate(previous?.smoothedSatisfactionScore ?? 50);
-  const expectedRetained = priorBase * repeatRate;
-  const retainedVolumeThisMonth = Math.min(actualVolumeThisMonth, expectedRetained);
-  const newVolumeThisMonth = Math.max(0, actualVolumeThisMonth - retainedVolumeThisMonth);
+  const actualVolumeThisMonth = newVolumeThisMonth + retainedVolumeThisMonth;
 
   // Inertie (spec §8) : la base glisse vers la valeur du mois, elle n'y saute jamais.
   const retainedBaseVolume = priorBase * (1 - VOLUME_EWMA_ALPHA) + actualVolumeThisMonth * VOLUME_EWMA_ALPHA;
@@ -71,6 +87,15 @@ export function updateSegmentMemory(
         ? 0
         : null;
 
+  // Frustration de disponibilité (spec §4-5) : distincte de la satisfaction,
+  // jamais mise à jour depuis l'expérience des clients servis. `null` (pas
+  // de demande de réachat ce mois-ci) -> aucun signal, la valeur précédente
+  // est conservée telle quelle (même motif que la satisfaction ci-dessus).
+  const refusalRate = repeatDemandThisMonth > 0 ? clamp(unservedRepeatDemandThisMonth / repeatDemandThisMonth, 0, 1) : null;
+  const priorFrustration = previous?.availabilityFrustration ?? 0;
+  const availabilityFrustration =
+    refusalRate === null ? priorFrustration : priorFrustration * (1 - AVAILABILITY_FRUSTRATION_EWMA_ALPHA) + refusalRate * AVAILABILITY_FRUSTRATION_EWMA_ALPHA;
+
   return {
     segmentId,
     segmentLabel,
@@ -84,6 +109,9 @@ export function updateSegmentMemory(
     consecutiveGoodMonths,
     consecutiveBadMonths,
     monthsSinceFirstSale,
+    repeatDemandThisMonth,
+    unservedRepeatDemandThisMonth,
+    availabilityFrustration,
   };
 }
 

@@ -35,6 +35,9 @@ function memory(overrides: Partial<SegmentCustomerMemory> = {}): SegmentCustomer
     consecutiveGoodMonths: 0,
     consecutiveBadMonths: 0,
     monthsSinceFirstSale: 3,
+    repeatDemandThisMonth: 0,
+    unservedRepeatDemandThisMonth: 0,
+    availabilityFrustration: 0,
     ...overrides,
   };
 }
@@ -125,6 +128,19 @@ describe("summarizeCustomerMemory (spec §15 : pas d'affichage avant donnée suf
       memory({ segmentId: "b", consecutiveGoodMonths: 1 }),
     ]);
     expect(declining!.fidelityTrend).toBe("declining");
+  });
+
+  it("agrège les clients récurrents non servis sur tous les segments (spec M11.2.3.1 §9, §15)", () => {
+    const summary = summarizeCustomerMemory([
+      memory({ segmentId: "a", unservedRepeatDemandThisMonth: 14 }),
+      memory({ segmentId: "b", unservedRepeatDemandThisMonth: 10 }),
+    ]);
+    expect(summary!.unservedThisMonth).toBe(24);
+  });
+
+  it("unservedThisMonth vaut 0 quand aucun client récurrent n'a été refusé", () => {
+    const summary = summarizeCustomerMemory([memory({ unservedRepeatDemandThisMonth: 0 })]);
+    expect(summary!.unservedThisMonth).toBe(0);
   });
 });
 
