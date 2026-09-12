@@ -1,4 +1,12 @@
-import { INITIAL_QUALITY_LEVEL, type BusinessFamilyState, type EconomicFamily, type GameDate, type Offer, type OfferBusinessModel } from "@founder/engine";
+import {
+  INITIAL_QUALITY_LEVEL,
+  INITIAL_REPUTATION_SCORE,
+  type BusinessFamilyState,
+  type EconomicFamily,
+  type GameDate,
+  type Offer,
+  type OfferBusinessModel,
+} from "@founder/engine";
 import { findOpportunity } from "../data/opportunities";
 import { defaultBusinessIdentity } from "../state/businessIdentity";
 import type { BusinessDraft, BusinessIdentity, MonthDraft, SaveGameV1 } from "../state/types";
@@ -81,7 +89,22 @@ function synthesizeLegacyOffer(
     createdAt: date,
     launchedAt: date,
     lastDemand: null,
+    customerMemory: [],
   };
+}
+
+/**
+ * Réputation d'une entreprise "subscription" antérieure à M11.2.3 (spec
+ * §11) : ce champ n'existait pas avant que la réputation soit pilotée par
+ * la satisfaction pour les 5 familles — initialisée au même niveau qu'une
+ * nouvelle entreprise, jamais une valeur fabriquée à partir d'un historique
+ * fictif (spec §20).
+ */
+function migrateFamilyState(familyState: BusinessFamilyState): BusinessFamilyState {
+  if (familyState.family === "subscription" && familyState.reputationScore === undefined) {
+    return { ...familyState, reputationScore: INITIAL_REPUTATION_SCORE };
+  }
+  return familyState;
 }
 
 const STORAGE_KEY = "founder.save.v1";
@@ -129,10 +152,11 @@ export function migrateSaveGame(raw: unknown): SaveGameV1 {
             businessIdentities[owned.id]?.createdAt ?? gameStateDate,
           ),
         ]
-      ).map((offer) => ({ ...offer, lastDemand: offer.lastDemand ?? null }));
+      ).map((offer) => ({ ...offer, lastDemand: offer.lastDemand ?? null, customerMemory: offer.customerMemory ?? [] }));
       return {
         ...owned,
         business: { ...owned.business, properties: owned.business.properties ?? [], offers },
+        familyState: migrateFamilyState(owned.familyState),
         saleProcess: owned.saleProcess ?? null,
       };
     }),
@@ -140,11 +164,18 @@ export function migrateSaveGame(raw: unknown): SaveGameV1 {
 
   const businesses = rawBusinesses.map((business) => migrateBusinessDraft(business, businessIdentities));
 
+  // `lastRecap.businessNarratives` (spec M11.2.3 §16) n'existait pas avant :
+  // complété à `[]`, jamais une narration fabriquée pour un mois déjà résolu.
+  const lastRecap = save.lastRecap
+    ? { ...save.lastRecap, businessNarratives: save.lastRecap.businessNarratives ?? [] }
+    : save.lastRecap;
+
   return {
     ...save,
     gameState,
     businessIdentities,
     draft: { timeAllocation: save.draft.timeAllocation, job: save.draft.job, businesses },
+    lastRecap,
   };
 }
 

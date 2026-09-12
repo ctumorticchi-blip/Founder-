@@ -167,4 +167,114 @@ describe("migrateSaveGame", () => {
     expect(offer.lastDemand).toBeNull();
     expect(offer.price).toBe(45); // continuité de revenu : rien d'autre ne change.
   });
+
+  it("l'offre historique synthétisée porte customerMemory: [] (spec M11.2.3 §20)", () => {
+    const migrated = migrateSaveGame(LEGACY_M10_SAVE);
+    expect(migrated.gameState.businesses[0]!.business.offers[0]!.customerMemory).toEqual([]);
+  });
+
+  it("une sauvegarde M11.2.2 (offres avec lastDemand, sans customerMemory) complète customerMemory: [] sans fabriquer d'historique", () => {
+    const legacyM1122Save = {
+      ...LEGACY_M10_SAVE,
+      gameState: {
+        ...LEGACY_M10_SAVE.gameState,
+        businesses: [
+          {
+            ...LEGACY_M10_SAVE.gameState.businesses[0]!,
+            business: {
+              ...LEGACY_M10_SAVE.gameState.businesses[0]!.business,
+              offers: [
+                {
+                  id: "service-abc123-offer-1",
+                  name: "Offre M11.2.2",
+                  businessModel: "service-hours",
+                  positioning: "standard",
+                  targetSegment: "Particuliers",
+                  price: 45,
+                  status: "launched",
+                  maturity: 100,
+                  qualityLevel: 60,
+                  developmentHoursInvested: 0,
+                  developmentBudgetInvested: 0,
+                  createdAt: { year: 2025, month: 3 },
+                  launchedAt: { year: 2025, month: 3 },
+                  lastDemand: null,
+                  // customerMemory absent : sauvegarde antérieure à M11.2.3.
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const migrated = migrateSaveGame(legacyM1122Save);
+    const offer = migrated.gameState.businesses[0]!.business.offers[0]!;
+    expect(offer.customerMemory).toEqual([]);
+    expect(offer.price).toBe(45);
+  });
+
+  it("une entreprise subscription sans reputationScore (antérieure à M11.2.3) reçoit la réputation initiale, jamais un historique fabriqué", () => {
+    const legacySubscriptionSave = {
+      ...LEGACY_M10_SAVE,
+      gameState: {
+        ...LEGACY_M10_SAVE.gameState,
+        businesses: [
+          {
+            id: "sub-abc123",
+            business: { name: "sub-abc123", families: ["subscription"], treasury: { cash: 0 } },
+            workforce: { headcount: 0 },
+            marketId: "market-2",
+            familyState: { family: "subscription", activeSubscribers: 500, arpu: 29, churnRateBase: 0.04, cogsRatio: 0.2 },
+          },
+        ],
+      },
+    };
+    const migrated = migrateSaveGame(legacySubscriptionSave);
+    const familyState = migrated.gameState.businesses[0]!.familyState as { readonly reputationScore: number };
+    expect(familyState.reputationScore).toBeGreaterThanOrEqual(0);
+    expect(familyState.reputationScore).toBeLessThanOrEqual(1);
+  });
+
+  it("la migration M11.2.3 est idempotente (customerMemory/reputationScore stables sur double passage)", () => {
+    const legacySubscriptionSave = {
+      ...LEGACY_M10_SAVE,
+      gameState: {
+        ...LEGACY_M10_SAVE.gameState,
+        businesses: [
+          {
+            id: "sub-abc123",
+            business: { name: "sub-abc123", families: ["subscription"], treasury: { cash: 0 } },
+            workforce: { headcount: 0 },
+            marketId: "market-2",
+            familyState: { family: "subscription", activeSubscribers: 500, arpu: 29, churnRateBase: 0.04, cogsRatio: 0.2 },
+          },
+        ],
+      },
+    };
+    const migratedOnce = migrateSaveGame(legacySubscriptionSave);
+    const migratedTwice = migrateSaveGame(migratedOnce);
+    expect(migratedTwice).toEqual(migratedOnce);
+  });
+
+  it("un lastRecap antérieur à M11.2.3 (sans businessNarratives) se charge sans crash et reçoit []", () => {
+    const legacyRecapSave = {
+      ...LEGACY_M10_SAVE,
+      lastRecap: {
+        date: { year: 2025, month: 6 },
+        ageYears: 19,
+        cashBefore: 900,
+        cashAfter: 1000,
+        events: [],
+        businessSummaries: [],
+        // businessNarratives absent : sauvegarde antérieure à M11.2.3.
+      },
+    };
+    const migrated = migrateSaveGame(legacyRecapSave);
+    expect(migrated.lastRecap?.businessNarratives).toEqual([]);
+  });
+
+  it("lastRecap: null reste null après migration (aucun mois en attente)", () => {
+    const migrated = migrateSaveGame(LEGACY_M10_SAVE);
+    expect(migrated.lastRecap).toBeNull();
+  });
 });

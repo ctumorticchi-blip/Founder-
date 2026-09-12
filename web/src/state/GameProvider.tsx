@@ -13,6 +13,7 @@ import {
 import { OPPORTUNITIES } from "../data/opportunities";
 import { generateSeed } from "../lib/seed";
 import { loadSave, writeSave, clearSave } from "../lib/storage";
+import { computeBusinessNarratives } from "./businessNarrative";
 import { TOTAL_MONTHLY_HOURS, buildMonthActions, createEmptyDraft, deriveNextDraft } from "./draft";
 import { sanitizeEngineError } from "./errorMessages";
 import type {
@@ -71,6 +72,7 @@ function computeRecap(
     cashAfter: next.character.cash,
     events: next.events.map((event) => ({ kind: event.kind, message: event.message })),
     businessSummaries,
+    businessNarratives: computeBusinessNarratives(prev, next, businessIdentities),
   };
 }
 

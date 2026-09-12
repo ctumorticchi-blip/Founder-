@@ -1,6 +1,13 @@
 import { monthsBetween } from "../time/clock.js";
 import type { CustomerSegment } from "../../types/customerSegment.js";
-import type { DemandFunnelResult, DemandSignal, FitBreakdown, PriceSignal, VisibilityLevel } from "../../types/demand.js";
+import type {
+  DemandFunnelResult,
+  DemandSignal,
+  FitBreakdown,
+  PriceSignal,
+  SegmentDemandContribution,
+  VisibilityLevel,
+} from "../../types/demand.js";
 import type { GameDate } from "../time/clock.js";
 import type { Market } from "../../types/market.js";
 import type { Offer, OfferPositioning } from "../../types/offer.js";
@@ -67,11 +74,16 @@ const VISIBILITY_BASELINE = 0.1;
 const VISIBILITY_PROSPECTION_WEIGHT = 0.5;
 const VISIBILITY_REPUTATION_WEIGHT = 0.4;
 const MAX_USEFUL_PROSPECTION_HOURS = 160;
+/** Poids du bouche-à-oreille organique dans la visibilité (spec M11.2.3 §6.2) — un facteur d'appoint, jamais dominant. */
+const VISIBILITY_WORD_OF_MOUTH_WEIGHT = 0.3;
 
-function computeVisibilityFactor(prospectionHours: number, reputationScore: number): number {
+function computeVisibilityFactor(prospectionHours: number, reputationScore: number, organicWordOfMouth: number): number {
   const prospectionRatio = clamp(prospectionHours, 0, MAX_USEFUL_PROSPECTION_HOURS) / MAX_USEFUL_PROSPECTION_HOURS;
   return clamp(
-    VISIBILITY_BASELINE + VISIBILITY_PROSPECTION_WEIGHT * prospectionRatio + VISIBILITY_REPUTATION_WEIGHT * clamp(reputationScore, 0, 1),
+    VISIBILITY_BASELINE +
+      VISIBILITY_PROSPECTION_WEIGHT * prospectionRatio +
+      VISIBILITY_REPUTATION_WEIGHT * clamp(reputationScore, 0, 1) +
+      VISIBILITY_WORD_OF_MOUTH_WEIGHT * clamp(organicWordOfMouth, 0, 1),
     0,
     1,
   );
@@ -105,6 +117,12 @@ export interface ComputeOfferDemandParams {
   readonly reputationScore: number;
   readonly prospectionHours: number;
   readonly date: GameDate;
+  /**
+   * Bouche-à-oreille organique (spec M11.2.3 §6.2, §10) — optionnel,
+   * défaut `0` : tout appel omettant ce paramètre produit un résultat
+   * strictement identique à M11.2.2 (non-régressif par construction).
+   */
+  readonly organicWordOfMouth?: number;
 }
 
 /**
@@ -122,7 +140,7 @@ export function computeOfferDemand(
 ): Omit<DemandFunnelResult, "capacity" | "sales" | "lostToCapacity"> {
   const monthsActive = monthsBetween(offer.createdAt, params.date);
   const monthOfYearIndex = params.date.month - 1;
-  const visibilityFactor = computeVisibilityFactor(params.prospectionHours, params.reputationScore);
+  const visibilityFactor = computeVisibilityFactor(params.prospectionHours, params.reputationScore, params.organicWordOfMouth ?? 0);
 
   // Prix "normal" moyen du marché, pondéré par la taille catalogue des segments — stable
   // dans le mois (n'inclut ni la dérive structurelle ni la saisonnalité) et surtout
@@ -143,6 +161,8 @@ export function computeOfferDemand(
 
   let topSegment: CustomerSegment = segments[0]!;
   let topSegmentInterest = -Infinity;
+
+  const bySegment: SegmentDemandContribution[] = [];
 
   const fitWeightSum = { total: 0 };
   const fitAccumulator = { priceFit: 0, qualityFit: 0, positioningFit: 0, trustFit: 0, overallFit: 0 };
@@ -165,6 +185,8 @@ export function computeOfferDemand(
     reached += segmentReached;
     interested += segmentInterested;
     demand += segmentDemand;
+
+    bySegment.push({ segmentId: segment.id, segmentLabel: segment.label, demand: segmentDemand, fit });
 
     fitAccumulator.priceFit += fit.priceFit * segmentInterested;
     fitAccumulator.qualityFit += fit.qualityFit * segmentInterested;
@@ -214,5 +236,6 @@ export function computeOfferDemand(
     visibilityLevel: bucketVisibility(visibilityFactor),
     priceSignal: bucketPriceSignal(offer.price, marketReferencePrice),
     demandSignal: bucketDemandSignal(demand, availableMarket),
+    bySegment,
   };
 }

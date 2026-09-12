@@ -155,9 +155,34 @@ export {
 } from "./engine/business/offer.js";
 
 export type { CustomerSegment } from "./types/customerSegment.js";
-export type { DemandFunnelResult, DemandSignal, FitBreakdown, PriceSignal, VisibilityLevel } from "./types/demand.js";
+export type {
+  DemandFunnelResult,
+  DemandSignal,
+  FitBreakdown,
+  PriceSignal,
+  SegmentDemandContribution,
+  VisibilityLevel,
+} from "./types/demand.js";
 export { getMarketSegments } from "./engine/market/segments.js";
-export { computeOfferDemand, computeSegmentFit } from "./engine/market/demand.js";
+export { computeOfferDemand, computeSegmentFit, type ComputeOfferDemandParams } from "./engine/market/demand.js";
+
+export type {
+  FidelityTrend,
+  SatisfactionDiagnosis,
+  SatisfactionLevel,
+  SatisfactionResult,
+  SegmentCustomerMemory,
+} from "./types/satisfaction.js";
+export { computeSegmentExpectation } from "./engine/customer/expectations.js";
+export { computeDeliveredExperience, computeOperationalPenalty, type OperationalPressure } from "./engine/customer/experience.js";
+export { bucketSatisfactionLevel, computeSatisfaction } from "./engine/customer/satisfaction.js";
+export {
+  computeRepeatRate,
+  computeReputationUpdate,
+  computeSubscriptionChurnAdjustment,
+  computeWordOfMouth,
+  updateSegmentMemory,
+} from "./engine/customer/retention.js";
 
 export type { SaleClosing, SaleDecision, SaleOffer, SaleProcessState, SaleStatus } from "./types/sale.js";
 export {
@@ -181,4 +206,10 @@ export type {
 } from "./engine/simulation/types.js";
 export { createInitialGameState } from "./engine/simulation/game.js";
 export { simulateMonth } from "./engine/simulation/simulateMonth.js";
-export { createOwnedBusiness, resolveBusinessMonth, type ResolvedBusinessMonth } from "./engine/simulation/businessResolution.js";
+export {
+  INITIAL_REPUTATION_SCORE,
+  createOwnedBusiness,
+  resolveBusinessMonth,
+  wordOfMouthReferenceVolume,
+  type ResolvedBusinessMonth,
+} from "./engine/simulation/businessResolution.js";

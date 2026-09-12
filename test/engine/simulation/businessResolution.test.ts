@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../../../src/engine/rng/rng.js";
-import { createOwnedBusiness, resolveBusinessMonth } from "../../../src/engine/simulation/businessResolution.js";
+import { createOwnedBusiness, resolveBusinessMonth, wordOfMouthReferenceVolume } from "../../../src/engine/simulation/businessResolution.js";
 import type { BusinessAction, CreateBusinessSpec } from "../../../src/engine/simulation/types.js";
 import type { Market } from "../../../src/types/market.js";
 import type { OfferAction } from "../../../src/types/offer.js";
@@ -226,6 +226,22 @@ describe("resolveBusinessMonth — sous-effectif (Subscription : pénalité de c
       throw new Error("familyState devrait rester 'subscription'");
     }
     expect(understaffed.updated.familyState.activeSubscribers).toBeLessThan(adequatelyStaffed.updated.familyState.activeSubscribers);
+  });
+});
+
+describe("wordOfMouthReferenceVolume (spec M11.2.3 §9, §10, §15)", () => {
+  it("renvoie une valeur fixe positive pour les familles à capacité finie", () => {
+    expect(wordOfMouthReferenceVolume("service")).toBeGreaterThan(0);
+    expect(wordOfMouthReferenceVolume("hospitality")).toBeGreaterThan(0);
+    expect(wordOfMouthReferenceVolume("retail")).toBeGreaterThan(0);
+    expect(wordOfMouthReferenceVolume("agency")).toBeGreaterThan(0);
+  });
+
+  it("subscription : suit la base d'abonnés actifs, jamais sous le plancher", () => {
+    // Sous le plancher (5 comme 0 abonnés) : la valeur de référence reste au plancher, inchangée.
+    expect(wordOfMouthReferenceVolume("subscription", 5)).toBe(wordOfMouthReferenceVolume("subscription", 0));
+    // Au-delà du plancher, la référence suit réellement la base d'abonnés.
+    expect(wordOfMouthReferenceVolume("subscription", 10_000)).toBeGreaterThan(wordOfMouthReferenceVolume("subscription", 5));
   });
 });
 

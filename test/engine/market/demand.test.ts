@@ -23,6 +23,7 @@ function offer(overrides: Partial<Offer> = {}): Offer {
     createdAt: { year: 2026, month: 1 },
     launchedAt: { year: 2026, month: 1 },
     lastDemand: null,
+    customerMemory: [],
     ...overrides,
   };
 }
@@ -208,14 +209,44 @@ describe("computeOfferDemand (spec M11.2.2 §4-§7)", () => {
     const result = computeOfferDemand(offer(), MARKET, segments, baseParams);
     const keys = Object.keys(result).sort();
     expect(keys).toEqual(
-      ["availableMarket", "demand", "demandSignal", "fit", "interested", "priceSignal", "reached", "topSegmentId", "topSegmentLabel", "visibilityLevel"].sort(),
+      // "bySegment" ajouté en M11.2.3 (spec §2.2) : extension additive, la boucle par segment
+      // existait déjà en interne, seule son exposition est nouvelle (jamais un nouveau coefficient).
+      ["availableMarket", "bySegment", "demand", "demandSignal", "fit", "interested", "priceSignal", "reached", "topSegmentId", "topSegmentLabel", "visibilityLevel"].sort(),
     );
     expect(Object.keys(result.fit).sort()).toEqual(["overallFit", "positioningFit", "priceFit", "qualityFit", "trustFit"].sort());
+    for (const entry of result.bySegment) {
+      expect(Object.keys(entry).sort()).toEqual(["demand", "fit", "segmentId", "segmentLabel"].sort());
+    }
   });
 
   it("est déterministe (mêmes entrées -> même résultat, aucun aléa)", () => {
     const a = computeOfferDemand(offer(), MARKET, segments, baseParams);
     const b = computeOfferDemand(offer(), MARKET, segments, baseParams);
     expect(a).toEqual(b);
+  });
+
+  it("bySegment a une entrée par segment fourni, dont la somme des demandes égale la demande totale", () => {
+    const result = computeOfferDemand(offer(), MARKET, segments, baseParams);
+    expect(result.bySegment).toHaveLength(segments.length);
+    const sum = result.bySegment.reduce((acc, entry) => acc + entry.demand, 0);
+    expect(sum).toBeCloseTo(result.demand, 6);
+  });
+
+  it("organicWordOfMouth omis produit un résultat strictement identique à un appel avec 0 explicite (non-régression M11.2.2)", () => {
+    const omitted = computeOfferDemand(offer(), MARKET, segments, baseParams);
+    const explicitZero = computeOfferDemand(offer(), MARKET, segments, { ...baseParams, organicWordOfMouth: 0 });
+    expect(omitted).toEqual(explicitZero);
+  });
+
+  it("un organicWordOfMouth élevé augmente la visibilité, donc la demande, toutes choses égales par ailleurs", () => {
+    const withoutWom = computeOfferDemand(offer(), MARKET, segments, { ...baseParams, prospectionHours: 0, reputationScore: 0 });
+    const withWom = computeOfferDemand(offer(), MARKET, segments, {
+      ...baseParams,
+      prospectionHours: 0,
+      reputationScore: 0,
+      organicWordOfMouth: 0.25,
+    });
+    expect(withWom.reached).toBeGreaterThan(withoutWom.reached);
+    expect(withWom.demand).toBeGreaterThan(withoutWom.demand);
   });
 });

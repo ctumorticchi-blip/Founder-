@@ -5,6 +5,14 @@ import { useGame } from "../state/GameProvider";
 import { useNavigation } from "../state/Navigation";
 import { demandSignalLabel, demandUnitLabel, offerModelLabel, offerQualityLabel, priceSignalLabel, visibilityLevelLabel } from "../data/offerModels";
 import { getPublicSegmentOptions } from "../data/publicSegments";
+import {
+  activeDiagnosisLines,
+  computeOfferWordOfMouth,
+  fidelityTrendLabel,
+  satisfactionLevelLabel,
+  summarizeCustomerMemory,
+  wordOfMouthDescription,
+} from "../data/satisfactionLabels";
 import { totalFounderBusinessHours } from "../state/draft";
 import { NumberField } from "../components/ui/NumberField";
 
@@ -51,6 +59,18 @@ export function OfferScreen({ businessId, offerId }: { readonly businessId: stri
   const threshold = computeLaunchThreshold(offer.businessModel);
   const canLaunch = offer.status === "in-development" && offer.maturity >= threshold && !pendingLaunch;
   const remainingForDevelopment = Math.max(0, state.draft.timeAllocation.business - totalFounderBusinessHours(state.draft));
+
+  // Satisfaction/rétention (spec M11.2.3 §15) : jamais affiché avant qu'au
+  // moins un segment ait une vente réelle (`summarizeCustomerMemory` renvoie
+  // `null` tant que ce n'est pas le cas).
+  const customerSummary = summarizeCustomerMemory(offer.customerMemory);
+  const activeSubscribers = business?.familyState.family === "subscription" ? business.familyState.activeSubscribers : undefined;
+  const wordOfMouth = customerSummary ? computeOfferWordOfMouth(offer.customerMemory, draftBusiness.family, activeSubscribers) : 0;
+  const dominantSegmentMemory =
+    offer.customerMemory.length > 0
+      ? offer.customerMemory.reduce((a, b) => (b.retainedBaseVolume > a.retainedBaseVolume ? b : a))
+      : null;
+  const diagnosisLines = dominantSegmentMemory?.lastDiagnosis ? activeDiagnosisLines(dominantSegmentMemory.lastDiagnosis) : [];
 
   const queueDevelop = () => {
     if (developmentHours <= 0 && developmentBudget <= 0) return;
@@ -134,6 +154,44 @@ export function OfferScreen({ businessId, offerId }: { readonly businessId: stri
                 {Math.round(offer.lastDemand.lostToCapacity).toLocaleString("fr-FR")}
               </span>
             </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {customerSummary ? (
+        <div className="card stack">
+          <div className="section-title">Clients</div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Nouveaux ce mois-ci</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{Math.round(customerSummary.newThisMonth).toLocaleString("fr-FR")}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Clients récurrents</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{Math.round(customerSummary.recurrentThisMonth).toLocaleString("fr-FR")}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Satisfaction</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{satisfactionLevelLabel(customerSummary.satisfactionLevel)}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Fidélité</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{fidelityTrendLabel(customerSummary.fidelityTrend)}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Bouche-à-oreille</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{wordOfMouthDescription(wordOfMouth, customerSummary.fidelityTrend)}</span>
+          </div>
+          {diagnosisLines.length > 0 ? (
+            <details>
+              <summary className="text-sm text-secondary" style={{ cursor: "pointer" }}>Pourquoi ?</summary>
+              <div className="stack" style={{ marginTop: 8 }}>
+                {diagnosisLines.map((line) => (
+                  <span key={line.key} className="text-sm">
+                    {line.positive ? "✓" : "⚠"} {line.label}
+                  </span>
+                ))}
+              </div>
+            </details>
           ) : null}
         </div>
       ) : null}

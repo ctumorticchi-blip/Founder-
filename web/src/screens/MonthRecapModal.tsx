@@ -40,6 +40,21 @@ export function MonthRecapModal({ recap }: { readonly recap: MonthRecap }) {
           </div>
         ) : null}
 
+        {recap.businessNarratives.length > 0 ? (
+          <div className="card stack">
+            <div className="section-title">Ce qui a changé</div>
+            {recap.businessNarratives.map((narrative) => (
+              <div key={narrative.businessId} className="stack" style={{ gap: 2 }}>
+                {narrative.sentences.map((sentence, index) => (
+                  <p className="text-sm" key={index}>
+                    {sentence}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         {recap.events.length > 0 ? (
           <div className="card stack">
             <div className="section-title">Événements</div>

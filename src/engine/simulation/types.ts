@@ -20,6 +20,13 @@ export type BusinessFamilyState =
       readonly arpu: number;
       readonly churnRateBase: number;
       readonly cogsRatio: number;
+      /**
+       * Réputation de l'activité, 0-1 (spec M11.2.3 §0.3) : remplace le
+       * proxy `1 - churnRateBase` utilisé provisoirement par M11.2.2 pour
+       * la visibilité — Subscription rejoint les 4 autres familles avec
+       * une réputation réellement pilotée par la satisfaction.
+       */
+      readonly reputationScore: number;
     }
   | { readonly family: "retail"; readonly reputationScore: number; readonly unitCostOfGoods: number }
   | {

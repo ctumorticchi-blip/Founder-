@@ -1,4 +1,5 @@
 import type { BusinessFamilyDecisions, CreateBusinessSpec, GameDate, GameState, OfferAction, SaleDecision, TimeCategory } from "@founder/engine";
+import type { BusinessNarrative } from "./businessNarrative";
 
 /**
  * Modèle de "brouillon" du mois en cours, côté UI uniquement. Le joueur
@@ -107,6 +108,8 @@ export interface MonthRecap {
   readonly cashAfter: number;
   readonly events: ReadonlyArray<{ readonly kind: string; readonly message: string }>;
   readonly businessSummaries: readonly BusinessMonthSummary[];
+  /** Narration causale par entreprise (spec M11.2.3 §16) — `[]` sur une sauvegarde antérieure migrée sans y être rejouée. */
+  readonly businessNarratives: readonly BusinessNarrative[];
 }
 
 export interface SaveGameV1 {

@@ -5,9 +5,16 @@ import type { GameState, MonthActions } from "../../../src/engine/simulation/typ
 import type { OfferAction } from "../../../src/types/offer.js";
 import { AGENCY_MARKET, RETAIL_MARKET } from "../../../src/scenarios/markets.js";
 
+// Le score de satisfaction (M11.2.3) dépend de l'écart qualité délivrée vs
+// attentes des segments retail (35-70) — une offre restée à sa qualité de
+// départ (30, jamais développée) déçoit durablement et ferait chuter la
+// réputation au lieu de la faire progresser. Le `develop` post-lancement
+// reflète un commerce réellement tenu (produit soigné), condition nécessaire
+// à l'invariant "vendre régulièrement fait progresser la réputation".
 const RETAIL_OFFER_ACTIONS: OfferAction[] = [
   { kind: "create", spec: { id: "fleur-offer", name: "Bouquets Fleur Co", businessModel: "service-hours", positioning: "standard", targetSegment: "", price: 15 } },
   { kind: "launch", offerId: "fleur-offer" },
+  { kind: "develop", offerId: "fleur-offer", hours: 0, budget: 3_000 },
 ];
 
 const AGENCY_OFFER_ACTIONS: OfferAction[] = [
@@ -24,6 +31,15 @@ const SEED = 909090;
  * réellement jouables via `simulateMonth`, pas seulement testables
  * isolément (comme c'était le cas pour Retail/Agency depuis M3/M8).
  */
+// Capacité (main-d'œuvre + stock) dimensionnée pour rester sous le seuil de
+// confort opérationnel (spec M11.2.3 §4, `SATURATION_COMFORT_THRESHOLD`)
+// face à la demande réelle de ce marché : sans effectif, la demande captée
+// (~4000-7000/mois) écrase la capacité fondateur seul (600 unités), sature
+// systématiquement l'expérience délivrée et empêche la réputation de
+// progresser même à qualité élevée — ce n'est plus un simple test de
+// capacité/embauche mais aussi, désormais, de l'expérience réellement vécue.
+const RETAIL_STAFFED_HEADCOUNT = 5;
+
 function retailCreationActions(founderHours: number): MonthActions {
   return {
     timeAllocation: { emploi: 0, apprentissage: 0, business: founderHours, reseau: 0 },
@@ -42,13 +58,14 @@ function retailCreationActions(founderHours: number): MonthActions {
           creditLineLimit: 20_000,
           creditLineInterestRateAnnual: 0.08,
         },
-        decisions: { family: "retail", stockUnits: 2_000 },
+        decisions: { family: "retail", stockUnits: 4_000 },
         offerActions: RETAIL_OFFER_ACTIONS,
         marketingBudget: 200,
         rentBudget: 500,
         adminBudget: 100,
         headcountCapacity: Number.POSITIVE_INFINITY,
         storageCapacity: Number.POSITIVE_INFINITY,
+        targetHeadcount: RETAIL_STAFFED_HEADCOUNT,
       },
     ],
   };
@@ -63,7 +80,7 @@ function retailContinuationActions(founderHours: number, targetHeadcount?: numbe
         businessId: "fleur-co",
         founderHoursAllocated: founderHours,
         founderProspectionHoursAllocated: 0,
-        decisions: { family: "retail", stockUnits: 2_000 },
+        decisions: { family: "retail", stockUnits: 4_000 },
         marketingBudget: 200,
         rentBudget: 500,
         adminBudget: 100,

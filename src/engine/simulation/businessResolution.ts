@@ -26,14 +26,25 @@ import { createBusiness } from "../business/treasury.js";
 import { createWorkforce } from "../employees/employees.js";
 import { getMarketSegments } from "../market/segments.js";
 import { computeOfferDemand } from "../market/demand.js";
-import type { MonthlyFinancialStatement } from "../../types/business.js";
+import { computeSegmentExpectation } from "../customer/expectations.js";
+import { computeDeliveredExperience, computeOperationalPenalty } from "../customer/experience.js";
+import { computeSatisfaction } from "../customer/satisfaction.js";
+import {
+  computeReputationUpdate,
+  computeSubscriptionChurnAdjustment,
+  computeWordOfMouth,
+  updateSegmentMemory,
+} from "../customer/retention.js";
+import type { MonthlyFinancialStatement, EconomicFamily } from "../../types/business.js";
 import type { OwnedProperty } from "../../types/realEstate.js";
 import type { Offer, OfferAction } from "../../types/offer.js";
 import type { DemandFunnelResult } from "../../types/demand.js";
+import type { CustomerSegment } from "../../types/customerSegment.js";
+import type { SegmentCustomerMemory } from "../../types/satisfaction.js";
 import type { Market } from "../../types/market.js";
 import type { BusinessAction, BusinessFamilyState, CreateBusinessSpec, OwnedBusiness } from "./types.js";
 
-const INITIAL_REPUTATION_SCORE = 0.1;
+export const INITIAL_REPUTATION_SCORE = 0.1;
 
 /** Crée une nouvelle entreprise possédée à partir d'une spécification de création (spec §3). */
 export function createOwnedBusiness(id: string, spec: CreateBusinessSpec): OwnedBusiness {
@@ -58,6 +69,7 @@ export function createOwnedBusiness(id: string, spec: CreateBusinessSpec): Owned
         arpu: spec.arpu,
         churnRateBase: spec.churnRateBase,
         cogsRatio: spec.cogsRatio,
+        reputationScore: INITIAL_REPUTATION_SCORE,
       };
       break;
     case "retail":
@@ -90,6 +102,110 @@ const MAX_UNDERSTAFFING_CHURN_PENALTY = 1.0;
 const LABOR_HOURS_PER_UNIT_SOLD = 0.25;
 /** Heures de main-d'œuvre nécessaires pour livrer un mandat par mois (Agency). */
 const LABOR_HOURS_PER_MANDATE = 15;
+
+/**
+ * Volume mensuel (unité native de la famille) au-delà duquel un mois pèse
+ * "pleinement" sur la réputation/le bouche-à-oreille (spec M11.2.3 §9,
+ * §10) — calibré sur l'ordre de grandeur des marchés de démonstration
+ * (`src/scenarios/markets.ts`). Subscription n'a pas de valeur fixe : voir
+ * `subscriptionReferenceVolume`.
+ */
+const FAMILY_REFERENCE_VOLUME: Readonly<Record<Exclude<EconomicFamily, "subscription">, number>> = {
+  service: 200,
+  hospitality: 600,
+  retail: 400,
+  agency: 6,
+};
+
+/** Plancher de volume de référence pour Subscription (spec §9) : une base naissante ne doit pas rendre le seuil nul. */
+const SUBSCRIPTION_REFERENCE_VOLUME_FLOOR = 50;
+
+/**
+ * Volume de référence utilisé pour le bouche-à-oreille/la réputation d'une
+ * famille (spec §9, §10) — exporté pour que l'écran puisse reproduire
+ * EXACTEMENT le même calcul que celui utilisé en interne (via
+ * `computeWordOfMouth`) pour afficher un signal qualitatif honnête, sans
+ * dupliquer ni réinventer le calibrage (spec §13, §15 : aucun coefficient
+ * interne inventé côté web).
+ */
+export function wordOfMouthReferenceVolume(family: EconomicFamily, activeSubscribers?: number): number {
+  if (family === "subscription") {
+    return Math.max(activeSubscribers ?? 0, SUBSCRIPTION_REFERENCE_VOLUME_FLOOR);
+  }
+  return FAMILY_REFERENCE_VOLUME[family];
+}
+
+/** Moyenne pondérée par le volume ; `50` (neutre) si le volume total est nul (spec §6.2 : aucune mémoire -> aucun effet). */
+function volumeWeightedSatisfaction(entries: readonly { readonly value: number; readonly weight: number }[]): number {
+  const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0);
+  if (totalWeight <= 0) return 50;
+  return entries.reduce((sum, e) => sum + e.value * e.weight, 0) / totalWeight;
+}
+
+/** Entrées bouche-à-oreille agrégées depuis la mémoire (spec §6.2) : satisfaction lissée pondérée + volume lissé total. */
+function aggregateWordOfMouthInputs(memory: readonly SegmentCustomerMemory[]): { readonly satisfaction: number; readonly volume: number } {
+  const volume = memory.reduce((sum, m) => sum + m.retainedBaseVolume, 0);
+  const satisfaction = volumeWeightedSatisfaction(memory.map((m) => ({ value: m.smoothedSatisfactionScore, weight: m.retainedBaseVolume })));
+  return { satisfaction, volume };
+}
+
+interface OfferSatisfactionOutcome {
+  readonly updatedMemory: readonly SegmentCustomerMemory[];
+  readonly volumeForReputation: number;
+  readonly satisfactionForReputation: number;
+}
+
+/**
+ * Ventile les ventes réelles d'une offre par segment (proportionnel à la
+ * part de demande de chaque segment — spec M11.2.3 §7, aucune resimulation
+ * du moteur économique) et met à jour la mémoire client de chaque segment.
+ * `deliveredExperience` est déjà calculée par l'appelant (la pression
+ * opérationnelle diffère selon la famille — spec §4).
+ */
+function resolveOfferSatisfaction(
+  offer: Offer,
+  segments: readonly CustomerSegment[],
+  funnel: Omit<DemandFunnelResult, "capacity" | "sales" | "lostToCapacity">,
+  deliveredExperience: number,
+  operationalPenalty: number,
+  actualSales: number,
+  reputationScore: number,
+): OfferSatisfactionOutcome {
+  const totalSegmentDemand = funnel.bySegment.reduce((sum, s) => sum + s.demand, 0) || 1;
+  const segmentById = new Map(segments.map((s) => [s.id, s]));
+  const priorMemoryById = new Map(offer.customerMemory.map((m) => [m.segmentId, m]));
+
+  const satisfactionEntries: { value: number; weight: number }[] = [];
+
+  const updatedMemory: SegmentCustomerMemory[] = funnel.bySegment.map((seg) => {
+    const segmentSales = actualSales * (seg.demand / totalSegmentDemand);
+    const segment = segmentById.get(seg.segmentId);
+    let satisfactionThisMonth: number | null = null;
+    let diagnosisThisMonth = null as ReturnType<typeof computeSatisfaction>["diagnosis"] | null;
+    if (segmentSales > 0 && segment) {
+      const expectation = computeSegmentExpectation(offer, segment, reputationScore);
+      const priceRatio = offer.price / segment.referencePrice;
+      const result = computeSatisfaction(expectation, deliveredExperience, priceRatio, operationalPenalty);
+      satisfactionThisMonth = result.score;
+      diagnosisThisMonth = result.diagnosis;
+      satisfactionEntries.push({ value: result.score, weight: segmentSales });
+    }
+    return updateSegmentMemory(
+      priorMemoryById.get(seg.segmentId) ?? null,
+      seg.segmentId,
+      seg.segmentLabel,
+      segmentSales,
+      satisfactionThisMonth,
+      diagnosisThisMonth,
+    );
+  });
+
+  return {
+    updatedMemory,
+    volumeForReputation: actualSales,
+    satisfactionForReputation: volumeWeightedSatisfaction(satisfactionEntries),
+  };
+}
 
 export interface ResolvedBusinessMonth {
   readonly updated: OwnedBusiness;
@@ -212,14 +328,19 @@ export function resolveBusinessMonth(
         action.founderHoursAllocated + computeWorkforceCapacityHours(headcountResult.workforce, founderLeadershipSkill);
       let totalRevenue = 0;
       let totalVariableCosts = 0;
-      let totalHoursSold = 0;
+      let totalVolumeForReputation = 0;
+      const reputationEntries: { value: number; weight: number }[] = [];
       const demandById = new Map<string, DemandFunnelResult>();
+      const memoryById = new Map<string, readonly SegmentCustomerMemory[]>();
       for (const offer of launchedOffers) {
+        const priorWordOfMouth = aggregateWordOfMouthInputs(offer.customerMemory);
+        const organicWordOfMouth = computeWordOfMouth(priorWordOfMouth.satisfaction, priorWordOfMouth.volume, FAMILY_REFERENCE_VOLUME.service);
         const funnel = computeOfferDemand(offer, market, segments, {
           demandShare,
           reputationScore: state.reputationScore,
           prospectionHours: action.founderProspectionHoursAllocated,
           date,
+          organicWordOfMouth,
         });
         const capacityForOffer = remainingCapacityHours;
         const contribution = computeServiceMonth(
@@ -229,7 +350,6 @@ export function resolveBusinessMonth(
         );
         totalRevenue += contribution.revenue;
         totalVariableCosts += contribution.variableCosts;
-        totalHoursSold += contribution.hoursSold;
         remainingCapacityHours = Math.max(0, remainingCapacityHours - contribution.hoursSold);
         demandById.set(offer.id, {
           ...funnel,
@@ -237,15 +357,31 @@ export function resolveBusinessMonth(
           sales: contribution.hoursSold,
           lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
         });
+
+        const saturationRatio = capacityForOffer > 0 ? funnel.demand / capacityForOffer : funnel.demand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const operationalPenalty = computeOperationalPenalty({ saturationRatio });
+        const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
+        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, contribution.hoursSold, state.reputationScore);
+        memoryById.set(offer.id, outcome.updatedMemory);
+        totalVolumeForReputation += outcome.volumeForReputation;
+        reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });
       }
       revenue = totalRevenue;
       variableCosts = totalVariableCosts;
       familyState =
         launchedOffers.length > 0
-          ? { ...state, reputationScore: clamp(state.reputationScore + totalHoursSold * 0.0005, 0, 1) }
+          ? {
+              ...state,
+              reputationScore: computeReputationUpdate(
+                state.reputationScore,
+                volumeWeightedSatisfaction(reputationEntries),
+                totalVolumeForReputation,
+                FAMILY_REFERENCE_VOLUME.service,
+              ),
+            }
           : state;
       offersWithDemand = offersAfterActions.map((offer) =>
-        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)!, customerMemory: memoryById.get(offer.id)! } : offer,
       );
       break;
     }
@@ -258,14 +394,19 @@ export function resolveBusinessMonth(
       let remainingCoversCapacity = capacityHours / LABOR_HOURS_PER_COVER;
       let totalRevenue = 0;
       let totalVariableCosts = 0;
-      let totalCoversServed = 0;
+      let totalVolumeForReputation = 0;
+      const reputationEntries: { value: number; weight: number }[] = [];
       const demandById = new Map<string, DemandFunnelResult>();
+      const memoryById = new Map<string, readonly SegmentCustomerMemory[]>();
       for (const offer of launchedOffers) {
+        const priorWordOfMouth = aggregateWordOfMouthInputs(offer.customerMemory);
+        const organicWordOfMouth = computeWordOfMouth(priorWordOfMouth.satisfaction, priorWordOfMouth.volume, FAMILY_REFERENCE_VOLUME.hospitality);
         const funnel = computeOfferDemand(offer, market, segments, {
           demandShare,
           reputationScore: state.reputationScore,
           prospectionHours: action.founderProspectionHoursAllocated,
           date,
+          organicWordOfMouth,
         });
         const capacityForOffer = remainingCoversCapacity;
         const contribution = computeHospitalityMonth(
@@ -275,7 +416,6 @@ export function resolveBusinessMonth(
         );
         totalRevenue += contribution.revenue;
         totalVariableCosts += contribution.variableCosts;
-        totalCoversServed += contribution.coversServed;
         remainingCoversCapacity = Math.max(0, remainingCoversCapacity - contribution.coversServed);
         demandById.set(offer.id, {
           ...funnel,
@@ -283,15 +423,31 @@ export function resolveBusinessMonth(
           sales: contribution.coversServed,
           lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
         });
+
+        const saturationRatio = capacityForOffer > 0 ? funnel.demand / capacityForOffer : funnel.demand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const operationalPenalty = computeOperationalPenalty({ saturationRatio });
+        const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
+        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, contribution.coversServed, state.reputationScore);
+        memoryById.set(offer.id, outcome.updatedMemory);
+        totalVolumeForReputation += outcome.volumeForReputation;
+        reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });
       }
       revenue = totalRevenue;
       variableCosts = totalVariableCosts;
       familyState =
         launchedOffers.length > 0
-          ? { ...state, reputationScore: clamp(state.reputationScore + totalCoversServed * 0.0002, 0, 1) }
+          ? {
+              ...state,
+              reputationScore: computeReputationUpdate(
+                state.reputationScore,
+                volumeWeightedSatisfaction(reputationEntries),
+                totalVolumeForReputation,
+                FAMILY_REFERENCE_VOLUME.hospitality,
+              ),
+            }
           : state;
       offersWithDemand = offersAfterActions.map((offer) =>
-        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)!, customerMemory: memoryById.get(offer.id)! } : offer,
       );
       break;
     }
@@ -299,31 +455,45 @@ export function resolveBusinessMonth(
       const state = requireFamilyState(owned.familyState, "subscription");
       const segments = getMarketSegments(market.family);
       const launchedOffers = offersAfterActions.filter((offer) => offer.status === "launched");
-      // Substitut de réputation (spec M11.2.2 §6.2) : `subscription` ne
-      // porte pas de `reputationScore` dans son état — un churn de base
-      // faible traduit une confiance déjà installée, faute de mieux tant
-      // que la famille n'a pas sa propre mesure de réputation.
-      const reputationProxy = clamp(1 - state.churnRateBase, 0, 1);
+      const subscriptionReferenceVolume = Math.max(state.activeSubscribers, SUBSCRIPTION_REFERENCE_VOLUME_FLOOR);
+
+      const requiredHeadcount = state.activeSubscribers / SUBSCRIBERS_PER_SUPPORT_HEADCOUNT;
+      const staffingRatio = computeStaffingRatio(headcountResult.workforce.headcount, requiredHeadcount);
+      const understaffingPenalty =
+        staffingRatio < 1 ? (1 - staffingRatio) * MAX_UNDERSTAFFING_CHURN_PENALTY : 0;
+
+      // Ajustement de churn dérivé de la satisfaction agrégée de toutes les
+      // offres lancées (spec M11.2.3 §13) : distinct de `understaffingPenalty`
+      // (tension de capacité support, pas expérience perçue) — les deux se
+      // combinent multiplicativement, sans compter deux fois le même phénomène.
+      const businessWordOfMouthInputs = aggregateWordOfMouthInputs(launchedOffers.flatMap((offer) => offer.customerMemory));
+      const satisfactionChurnAdjustment = computeSubscriptionChurnAdjustment(businessWordOfMouthInputs.satisfaction);
+      const effectiveChurnRate = clamp(
+        state.churnRateBase * (1 + understaffingPenalty) * (1 + satisfactionChurnAdjustment),
+        0,
+        1,
+      );
+
       let totalNewSubscribers = 0;
       const demandById = new Map<string, DemandFunnelResult>();
+      const funnelById = new Map<string, Omit<DemandFunnelResult, "capacity" | "sales" | "lostToCapacity">>();
       for (const offer of launchedOffers) {
+        const priorWordOfMouth = aggregateWordOfMouthInputs(offer.customerMemory);
+        const organicWordOfMouth = computeWordOfMouth(priorWordOfMouth.satisfaction, priorWordOfMouth.volume, subscriptionReferenceVolume);
         const funnel = computeOfferDemand(offer, market, segments, {
           demandShare,
-          reputationScore: reputationProxy,
+          reputationScore: state.reputationScore,
           prospectionHours: action.founderProspectionHoursAllocated,
           date,
+          organicWordOfMouth,
         });
         totalNewSubscribers += funnel.demand;
+        funnelById.set(offer.id, funnel);
         // `computeSubscriptionMonth` n'a aucun plafond d'admission (vérifié
         // à la lecture, spec §6.2) : le funnel le reflète honnêtement au
         // lieu d'inventer une capacité qui n'existe pas dans le moteur.
         demandById.set(offer.id, { ...funnel, capacity: Infinity, sales: funnel.demand, lostToCapacity: 0 });
       }
-      const requiredHeadcount = state.activeSubscribers / SUBSCRIBERS_PER_SUPPORT_HEADCOUNT;
-      const staffingRatio = computeStaffingRatio(headcountResult.workforce.headcount, requiredHeadcount);
-      const understaffingPenalty =
-        staffingRatio < 1 ? (1 - staffingRatio) * MAX_UNDERSTAFFING_CHURN_PENALTY : 0;
-      const effectiveChurnRate = clamp(state.churnRateBase * (1 + understaffingPenalty), 0, 1);
       // Premier lancé (ordre de création) fixe le tarif du pool mono-tarif
       // actuel (spec §6.2) — corrige la limitation M11.2.1 où le prix de
       // l'offre était décoratif pour Subscription.
@@ -335,9 +505,42 @@ export function resolveBusinessMonth(
       );
       revenue = contribution.revenue;
       variableCosts = contribution.variableCosts;
-      familyState = { ...state, activeSubscribers: contribution.endingSubscribers };
+
+      // Expérience délivrée (spec §4, §13) : Subscription n'a pas de ratio
+      // capacité/demande (capacité illimitée) — la seule pression
+      // opérationnelle observable est la tension support déjà mesurée par
+      // `understaffingPenalty`, réutilisée directement comme `saturationRatio`.
+      const operationalPenalty = computeOperationalPenalty({ saturationRatio: understaffingPenalty });
+
+      let totalVolumeForReputation = 0;
+      const reputationEntries: { value: number; weight: number }[] = [];
+      const memoryById = new Map<string, readonly SegmentCustomerMemory[]>();
+      for (const offer of launchedOffers) {
+        const funnel = funnelById.get(offer.id)!;
+        const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
+        // Pas de plafond de capacité par offre en Subscription (spec §6.2) :
+        // toute la demande captée est réputée servie.
+        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, funnel.demand, state.reputationScore);
+        memoryById.set(offer.id, outcome.updatedMemory);
+        totalVolumeForReputation += outcome.volumeForReputation;
+        reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });
+      }
+
+      familyState = {
+        ...state,
+        activeSubscribers: contribution.endingSubscribers,
+        reputationScore:
+          launchedOffers.length > 0
+            ? computeReputationUpdate(
+                state.reputationScore,
+                volumeWeightedSatisfaction(reputationEntries),
+                totalVolumeForReputation,
+                subscriptionReferenceVolume,
+              )
+            : state.reputationScore,
+      };
       offersWithDemand = offersAfterActions.map((offer) =>
-        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)!, customerMemory: memoryById.get(offer.id)! } : offer,
       );
       break;
     }
@@ -351,14 +554,19 @@ export function resolveBusinessMonth(
       let remainingCapacityUnits = Math.min(action.decisions.stockUnits, laborCapacityUnits);
       let totalRevenue = 0;
       let totalVariableCosts = 0;
-      let totalUnitsSold = 0;
+      let totalVolumeForReputation = 0;
+      const reputationEntries: { value: number; weight: number }[] = [];
       const demandById = new Map<string, DemandFunnelResult>();
+      const memoryById = new Map<string, readonly SegmentCustomerMemory[]>();
       for (const offer of launchedOffers) {
+        const priorWordOfMouth = aggregateWordOfMouthInputs(offer.customerMemory);
+        const organicWordOfMouth = computeWordOfMouth(priorWordOfMouth.satisfaction, priorWordOfMouth.volume, FAMILY_REFERENCE_VOLUME.retail);
         const funnel = computeOfferDemand(offer, market, segments, {
           demandShare,
           reputationScore: state.reputationScore,
           prospectionHours: action.founderProspectionHoursAllocated,
           date,
+          organicWordOfMouth,
         });
         const capacityForOffer = remainingCapacityUnits;
         const contribution = RetailEngine.computeMonth(
@@ -368,7 +576,6 @@ export function resolveBusinessMonth(
         );
         totalRevenue += contribution.revenue;
         totalVariableCosts += contribution.variableCosts;
-        totalUnitsSold += contribution.unitsSold;
         remainingCapacityUnits = Math.max(0, remainingCapacityUnits - contribution.unitsSold);
         demandById.set(offer.id, {
           ...funnel,
@@ -376,15 +583,31 @@ export function resolveBusinessMonth(
           sales: contribution.unitsSold,
           lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
         });
+
+        const saturationRatio = capacityForOffer > 0 ? funnel.demand / capacityForOffer : funnel.demand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const operationalPenalty = computeOperationalPenalty({ saturationRatio });
+        const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
+        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, contribution.unitsSold, state.reputationScore);
+        memoryById.set(offer.id, outcome.updatedMemory);
+        totalVolumeForReputation += outcome.volumeForReputation;
+        reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });
       }
       revenue = totalRevenue;
       variableCosts = totalVariableCosts;
       familyState =
         launchedOffers.length > 0
-          ? { ...state, reputationScore: clamp(state.reputationScore + totalUnitsSold * 0.0003, 0, 1) }
+          ? {
+              ...state,
+              reputationScore: computeReputationUpdate(
+                state.reputationScore,
+                volumeWeightedSatisfaction(reputationEntries),
+                totalVolumeForReputation,
+                FAMILY_REFERENCE_VOLUME.retail,
+              ),
+            }
           : state;
       offersWithDemand = offersAfterActions.map((offer) =>
-        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)!, customerMemory: memoryById.get(offer.id)! } : offer,
       );
       break;
     }
@@ -397,14 +620,19 @@ export function resolveBusinessMonth(
       let remainingCapacityMandates = capacityHours / LABOR_HOURS_PER_MANDATE;
       let totalRevenue = 0;
       let totalVariableCosts = 0;
-      let totalWonMandates = 0;
+      let totalVolumeForReputation = 0;
+      const reputationEntries: { value: number; weight: number }[] = [];
       const demandById = new Map<string, DemandFunnelResult>();
+      const memoryById = new Map<string, readonly SegmentCustomerMemory[]>();
       for (const offer of launchedOffers) {
+        const priorWordOfMouth = aggregateWordOfMouthInputs(offer.customerMemory);
+        const organicWordOfMouth = computeWordOfMouth(priorWordOfMouth.satisfaction, priorWordOfMouth.volume, FAMILY_REFERENCE_VOLUME.agency);
         const funnel = computeOfferDemand(offer, market, segments, {
           demandShare,
           reputationScore: state.reputationScore,
           prospectionHours: action.founderProspectionHoursAllocated,
           date,
+          organicWordOfMouth,
         });
         const capacityForOffer = remainingCapacityMandates;
         const contribution = AgencyEngine.computeMonth(
@@ -422,7 +650,6 @@ export function resolveBusinessMonth(
         );
         totalRevenue += contribution.revenue;
         totalVariableCosts += contribution.variableCosts;
-        totalWonMandates += contribution.wonMandates;
         remainingCapacityMandates = Math.max(0, remainingCapacityMandates - contribution.wonMandates);
         demandById.set(offer.id, {
           ...funnel,
@@ -430,15 +657,31 @@ export function resolveBusinessMonth(
           sales: contribution.wonMandates,
           lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
         });
+
+        const saturationRatio = capacityForOffer > 0 ? funnel.demand / capacityForOffer : funnel.demand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const operationalPenalty = computeOperationalPenalty({ saturationRatio });
+        const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
+        const outcome = resolveOfferSatisfaction(offer, segments, funnel, deliveredExperience, operationalPenalty, contribution.wonMandates, state.reputationScore);
+        memoryById.set(offer.id, outcome.updatedMemory);
+        totalVolumeForReputation += outcome.volumeForReputation;
+        reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });
       }
       revenue = totalRevenue;
       variableCosts = totalVariableCosts;
       familyState =
         launchedOffers.length > 0
-          ? { ...state, reputationScore: clamp(state.reputationScore + totalWonMandates * 0.001, 0, 1) }
+          ? {
+              ...state,
+              reputationScore: computeReputationUpdate(
+                state.reputationScore,
+                volumeWeightedSatisfaction(reputationEntries),
+                totalVolumeForReputation,
+                FAMILY_REFERENCE_VOLUME.agency,
+              ),
+            }
           : state;
       offersWithDemand = offersAfterActions.map((offer) =>
-        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)!, customerMemory: memoryById.get(offer.id)! } : offer,
       );
       break;
     }

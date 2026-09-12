@@ -1,5 +1,6 @@
 import type { GameDate } from "../engine/time/clock.js";
 import type { DemandFunnelResult } from "./demand.js";
+import type { SegmentCustomerMemory } from "./satisfaction.js";
 
 /**
  * Modèle économique de l'offre (spec M11.2 §3.2) — vocabulaire universel
@@ -78,6 +79,12 @@ export interface Offer {
    * calcul de demande dans le web).
    */
   readonly lastDemand: DemandFunnelResult | null;
+  /**
+   * Mémoire client par segment (spec M11.2.3 §6) : satisfaction/rétention
+   * accumulées mois après mois pour cette offre. `[]` avant la première
+   * vente réelle (offre en développement, ou lancée mais jamais vendue).
+   */
+  readonly customerMemory: readonly SegmentCustomerMemory[];
 }
 
 /**

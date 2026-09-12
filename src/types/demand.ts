@@ -21,6 +21,20 @@ export type PriceSignal = "low" | "fair" | "high";
 export type DemandSignal = "weak" | "moderate" | "strong";
 
 /**
+ * Contribution d'un segment à la demande d'une offre (spec M11.2.3 §2.2) —
+ * extension additive de M11.2.2 : la boucle par segment existait déjà dans
+ * `computeOfferDemand`, seule l'exposition de son détail est nouvelle (pas
+ * une duplication du calcul de demande). Consommée par la couche
+ * Satisfaction & Retention pour attribuer ventes/satisfaction par segment.
+ */
+export interface SegmentDemandContribution {
+  readonly segmentId: string;
+  readonly segmentLabel: string;
+  readonly demand: number;
+  readonly fit: FitBreakdown;
+}
+
+/**
  * Résultat de l'entonnoir de demande d'une offre pour un mois (spec §6) :
  * marché disponible → clients exposés → clients intéressés → demande →
  * capacité → ventes. Persisté sur `Offer.lastDemand` pour que l'écran
@@ -43,4 +57,6 @@ export interface DemandFunnelResult {
   readonly visibilityLevel: VisibilityLevel;
   readonly priceSignal: PriceSignal;
   readonly demandSignal: DemandSignal;
+  /** Ventilation par segment (spec M11.2.3 §2.2) — additif, jamais consommé par M11.2.2 lui-même. */
+  readonly bySegment: readonly SegmentDemandContribution[];
 }
