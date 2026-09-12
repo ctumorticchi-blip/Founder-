@@ -31,14 +31,27 @@ const SEED = 909090;
  * réellement jouables via `simulateMonth`, pas seulement testables
  * isolément (comme c'était le cas pour Retail/Agency depuis M3/M8).
  */
-// Capacité (main-d'œuvre + stock) dimensionnée pour rester sous le seuil de
-// confort opérationnel (spec M11.2.3 §4, `SATURATION_COMFORT_THRESHOLD`)
-// face à la demande réelle de ce marché : sans effectif, la demande captée
-// (~4000-7000/mois) écrase la capacité fondateur seul (600 unités), sature
-// systématiquement l'expérience délivrée et empêche la réputation de
-// progresser même à qualité élevée — ce n'est plus un simple test de
-// capacité/embauche mais aussi, désormais, de l'expérience réellement vécue.
-const RETAIL_STAFFED_HEADCOUNT = 5;
+// Capacité (main-d'œuvre + stock) dimensionnée pour rester raisonnablement
+// proche du seuil de confort opérationnel (spec M11.2.3 §4,
+// `SATURATION_COMFORT_THRESHOLD`) face à la demande réelle de ce marché :
+// sans effectif, la demande captée (~5000-7500/mois) écrase la capacité
+// fondateur seul, sature durablement l'expérience délivrée et empêche la
+// réputation de progresser même à qualité élevée. Recalibré en M11.2.3.2
+// (5 -> 10) : depuis que `computeXMonth` vend exactement
+// `min(demande, capacité)` au lieu d'un volume réduit une seconde fois par
+// un taux de conversion aléatoire (spec M11.2.3.2 §0-§5), un effectif de 5
+// laissait un ratio demande/capacité bien trop élevé (~1.6-2.3x) pour ce
+// test précis — la satisfaction du segment le plus exigeant
+// (`retail-amateurs-qualite`) s'effondrait assez pour faire régresser la
+// réputation sous son niveau initial. Avec 10 salariés, le stock
+// (4000 unités) redevient la contrainte réellement liante (au lieu de la
+// main-d'œuvre) et la réputation progresse bien au-delà de 0.1, exactement
+// l'invariant que ce test vérifie — la saturation reste substantielle
+// (`lostToCapacity` toujours très supérieur à 0), ce n'est donc pas un
+// recalibrage qui supprime le phénomène testé, seulement un qui restaure
+// une marge suffisante pour que l'invariant "embaucher assez -> la
+// réputation progresse" reste démontrable.
+const RETAIL_STAFFED_HEADCOUNT = 10;
 
 function retailCreationActions(founderHours: number): MonthActions {
   return {

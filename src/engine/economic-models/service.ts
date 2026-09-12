@@ -1,14 +1,14 @@
-import { clamp } from "../util/math.js";
 import type { EconomicEngine, EconomicEngineContext } from "./economic-engine.js";
 import type { EconomicContribution } from "../../types/business.js";
 
 /**
  * Famille "Service" (spec §7) : nettoyage, entretien, sécurité, etc. Le
- * modèle vend des heures de main-d'œuvre. Tant que le Market Engine et le
- * Competition Engine ne sont pas branchés (milestone M4), le taux de
- * remplissage de la capacité est un modèle simplifié piloté par la
- * réputation + un bruit RNG — il sera remplacé par une vraie résolution de
- * demande de marché en M4/M5, sans changer la forme de cette interface.
+ * modèle vend des heures de main-d'œuvre. `targetHours` est déjà la
+ * demande RÉELLEMENT captée par le Demand Engine (`computeOfferDemand` +
+ * `computeRepeatDemand`, spec M11.2.2/M11.2.3.1) : ce moteur ne fait plus
+ * que la comparer à la capacité physique — aucune seconde conversion
+ * commerciale (réputation/bruit) ne doit plus réduire une demande déjà
+ * captée (spec M11.2.3.2 §1-§2).
  */
 export interface ServiceEngineState {
   /** Prix facturé par heure de service. */
@@ -28,17 +28,14 @@ export interface ServiceEngineDecisions {
 
 export interface ServiceMonthContribution extends EconomicContribution {
   readonly hoursSold: number;
+  /** Métrique descriptive (`hoursSold / capacityHours`) — ne pilote plus jamais `hoursSold` (spec M11.2.3.2 §2, §11). */
   readonly utilizationRate: number;
 }
-
-const BASE_UTILIZATION = 0.5;
-const REPUTATION_UTILIZATION_BONUS = 0.4;
-const UTILIZATION_NOISE_STD_DEV = 0.05;
 
 export function computeServiceMonth(
   state: ServiceEngineState,
   decisions: ServiceEngineDecisions,
-  ctx: EconomicEngineContext,
+  _ctx: EconomicEngineContext,
 ): ServiceMonthContribution {
   if (decisions.capacityHours < 0) {
     throw new RangeError(`ServiceEngine: capacityHours=${decisions.capacityHours} doit être >= 0.`);
@@ -50,11 +47,8 @@ export function computeServiceMonth(
     throw new RangeError(`ServiceEngine: reputationScore=${state.reputationScore} doit être dans [0, 1].`);
   }
 
-  const demandCap = Math.min(decisions.targetHours, decisions.capacityHours);
-  const baseUtilization = BASE_UTILIZATION + state.reputationScore * REPUTATION_UTILIZATION_BONUS;
-  const noise = ctx.rng.nextGaussian(0, UTILIZATION_NOISE_STD_DEV);
-  const utilizationRate = clamp(baseUtilization + noise, 0, 1);
-  const hoursSold = demandCap * utilizationRate;
+  const hoursSold = Math.min(decisions.targetHours, decisions.capacityHours);
+  const utilizationRate = decisions.capacityHours > 0 ? hoursSold / decisions.capacityHours : 0;
 
   return {
     revenue: hoursSold * state.hourlyRate,

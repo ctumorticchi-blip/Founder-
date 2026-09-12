@@ -65,6 +65,17 @@ describe("SubscriptionEngine", () => {
     expect(subscriberHistory.every((n) => n >= 0)).toBe(true);
   });
 
+  it("GEL M11.2.3.2 : newSubscribers transmis sans second filtre (aucun double comptage détecté à l'inspection)", () => {
+    const rng = createRng(1);
+    const result = SubscriptionEngine.computeMonth(
+      { ...STATE, activeSubscribers: 0, churnRate: 0 },
+      { newSubscribers: 250 },
+      { rng },
+    );
+    // Base à 0, churn à 0 : endingSubscribers doit être EXACTEMENT newSubscribers, sans réduction.
+    expect(result.endingSubscribers).toBe(250);
+  });
+
   it("rejette des paramètres invalides", () => {
     const rng = createRng(1);
     expect(() =>

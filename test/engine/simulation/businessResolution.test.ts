@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../../../src/engine/rng/rng.js";
 import { createOwnedBusiness, resolveBusinessMonth, wordOfMouthReferenceVolume } from "../../../src/engine/simulation/businessResolution.js";
-import type { BusinessAction, CreateBusinessSpec, OwnedBusiness } from "../../../src/engine/simulation/types.js";
+import type { BusinessAction, BusinessFamilyDecisions, CreateBusinessSpec, OwnedBusiness } from "../../../src/engine/simulation/types.js";
 import type { Market } from "../../../src/types/market.js";
 import type { Offer, OfferAction } from "../../../src/types/offer.js";
 import type { SegmentCustomerMemory } from "../../../src/types/satisfaction.js";
@@ -365,6 +365,274 @@ describe("allocation new/repeat — capacité proportionnelle, aucune priorité 
     // s'effondre jamais uniquement à cause des clients refusés ailleurs.
     if (memory.lastSatisfactionScore !== null) {
       expect(memory.lastSatisfactionScore).toBeGreaterThan(60);
+    }
+  });
+});
+
+describe("Demand Execution Cleanup — conservation exacte demande captée -> ventes (spec M11.2.3.2 §15)", () => {
+  const HOSPITALITY_SPEC: CreateBusinessSpec = {
+    family: "hospitality",
+    name: "Test Hospitality",
+    marketId: "market-3",
+    foodCostPerCover: 7,
+    averageMonthlySalary: 2_000,
+    creditLineLimit: 100_000,
+    creditLineInterestRateAnnual: 0.08,
+  };
+  const HOSPITALITY_MARKET: Market = { ...SERVICE_MARKET, id: "market-3", family: "hospitality" };
+  const RETAIL_SPEC: CreateBusinessSpec = {
+    family: "retail",
+    name: "Test Retail",
+    marketId: "market-4",
+    unitCostOfGoods: 6,
+    averageMonthlySalary: 1_800,
+    creditLineLimit: 100_000,
+    creditLineInterestRateAnnual: 0.08,
+  };
+  const RETAIL_MARKET: Market = { ...SERVICE_MARKET, id: "market-4", family: "retail" };
+  const AGENCY_SPEC: CreateBusinessSpec = {
+    family: "agency",
+    name: "Test Agency",
+    marketId: "market-5",
+    averageMonthlyFeePerMandate: 6_000,
+    deliveryCostRatio: 0.2,
+    averageMonthlySalary: 3_500,
+    creditLineLimit: 100_000,
+    creditLineInterestRateAnnual: 0.08,
+  };
+  const AGENCY_MARKET: Market = { ...SERVICE_MARKET, id: "market-5", family: "agency" };
+
+  interface FamilyFixture {
+    readonly label: string;
+    readonly spec: CreateBusinessSpec;
+    readonly market: Market;
+    readonly segmentId: string;
+    readonly segmentLabel: string;
+    readonly decisions: BusinessFamilyDecisions;
+    readonly price: number;
+  }
+
+  // `stockUnits` énorme pour Retail : isole la contrainte de main-d'œuvre
+  // (pilotée par `founderHoursAllocated`, comme les 3 autres familles) —
+  // la contrainte de stock elle-même est vérifiée séparément plus bas.
+  const FAMILIES: readonly FamilyFixture[] = [
+    { label: "Service", spec: SERVICE_SPEC, market: SERVICE_MARKET, segmentId: "service-professionnels-locaux", segmentLabel: "Professionnels locaux", decisions: { family: "service" }, price: 40 },
+    { label: "Hospitality", spec: HOSPITALITY_SPEC, market: HOSPITALITY_MARKET, segmentId: "hospitality-habitues-quartier", segmentLabel: "Habitués du quartier", decisions: { family: "hospitality" }, price: 22 },
+    { label: "Retail", spec: RETAIL_SPEC, market: RETAIL_MARKET, segmentId: "retail-clientele-quartier", segmentLabel: "Clientèle de quartier", decisions: { family: "retail", stockUnits: 1_000_000_000 }, price: 15 },
+    { label: "Agency", spec: AGENCY_SPEC, market: AGENCY_MARKET, segmentId: "agency-pme-croissance", segmentLabel: "PME en croissance", decisions: { family: "agency" }, price: 4_000 },
+  ];
+
+  function seededMemoryFor(fixture: FamilyFixture, overrides: Partial<SegmentCustomerMemory> = {}): SegmentCustomerMemory {
+    return {
+      segmentId: fixture.segmentId,
+      segmentLabel: fixture.segmentLabel,
+      retainedBaseVolume: 1_000,
+      newVolumeThisMonth: 0,
+      retainedVolumeThisMonth: 0,
+      cumulativeAcquiredVolume: 1_000,
+      lastSatisfactionScore: 90,
+      smoothedSatisfactionScore: 90,
+      lastDiagnosis: null,
+      consecutiveGoodMonths: 3,
+      consecutiveBadMonths: 0,
+      monthsSinceFirstSale: 6,
+      repeatDemandThisMonth: 0,
+      unservedRepeatDemandThisMonth: 0,
+      availabilityFrustration: 0,
+      ...overrides,
+    };
+  }
+
+  function offerFor(fixture: FamilyFixture, memory: readonly SegmentCustomerMemory[]): Offer {
+    return {
+      id: "offer",
+      name: "Offre",
+      businessModel: "service-hours",
+      positioning: "standard",
+      targetSegment: "",
+      price: fixture.price,
+      status: "launched",
+      maturity: 100,
+      qualityLevel: 80,
+      developmentHoursInvested: 0,
+      developmentBudgetInvested: 0,
+      createdAt: DATE,
+      launchedAt: DATE,
+      lastDemand: null,
+      customerMemory: memory,
+    };
+  }
+
+  function ownedWithOffer(fixture: FamilyFixture, memory: readonly SegmentCustomerMemory[]): OwnedBusiness {
+    const owned = createOwnedBusiness("biz", fixture.spec);
+    return { ...owned, business: { ...owned.business, offers: [offerFor(fixture, memory)] } };
+  }
+
+  function actionFor(fixture: FamilyFixture, founderHoursAllocated: number): BusinessAction {
+    return {
+      businessId: "biz",
+      founderHoursAllocated,
+      founderProspectionHoursAllocated: 0,
+      offerActions: [],
+      decisions: fixture.decisions,
+      marketingBudget: 0,
+      rentBudget: 0,
+      adminBudget: 0,
+      headcountCapacity: Number.POSITIVE_INFINITY,
+      storageCapacity: Number.POSITIVE_INFINITY,
+      targetHeadcount: 0,
+    };
+  }
+
+  const DEMAND_SHARE_FIXTURE = 0.02;
+
+  function resolveWithCapacity(fixture: FamilyFixture, memory: readonly SegmentCustomerMemory[], founderHoursAllocated: number) {
+    return resolveBusinessMonth(
+      ownedWithOffer(fixture, memory),
+      actionFor(fixture, founderHoursAllocated),
+      DEMAND_SHARE_FIXTURE,
+      LEADERSHIP_SKILL,
+      createRng(1),
+      DATE,
+      fixture.market,
+    );
+  }
+
+  for (const fixture of FAMILIES) {
+    describe(fixture.label, () => {
+      const memory = [seededMemoryFor(fixture)];
+
+      it("capacité exacte == demande captée totale -> sales == demande, lostToCapacity == 0", () => {
+        // Calibration : capacité énorme -> lostToCapacity ~ 0 ; lit `totalDemand`
+        // et le coefficient (linéaire) capacité/heures pour cette famille.
+        const probe = resolveWithCapacity(fixture, memory, 1_000_000);
+        const probeDemand = probe.updated.business.offers[0]!.lastDemand!;
+        expect(probeDemand.lostToCapacity).toBeCloseTo(0, 3);
+        const totalDemand = probeDemand.demand;
+        const coefficient = probeDemand.capacity / 1_000_000;
+
+        const exact = resolveWithCapacity(fixture, memory, totalDemand / coefficient);
+        const exactDemand = exact.updated.business.offers[0]!.lastDemand!;
+        expect(exactDemand.sales).toBeCloseTo(totalDemand, 3);
+        expect(exactDemand.lostToCapacity).toBeCloseTo(0, 3);
+        // Conservation stricte, jamais de disparition silencieuse de demande.
+        expect(exactDemand.sales + exactDemand.lostToCapacity).toBeCloseTo(totalDemand, 3);
+      });
+
+      it("capacité == 60% de la demande captée -> conservation exacte du split new/repeat (spec §12, §15)", () => {
+        const probe = resolveWithCapacity(fixture, memory, 1_000_000);
+        const probeOffer = probe.updated.business.offers[0]!;
+        const totalDemand = probeOffer.lastDemand!.demand;
+        const coefficient = probeOffer.lastDemand!.capacity / 1_000_000;
+        const repeatDemand = probeOffer.customerMemory.reduce((sum, m) => sum + m.repeatDemandThisMonth, 0);
+        const newDemand = totalDemand - repeatDemand;
+
+        const partial = resolveWithCapacity(fixture, memory, (0.6 * totalDemand) / coefficient);
+        const partialOffer = partial.updated.business.offers[0]!;
+        const lastDemand = partialOffer.lastDemand!;
+        expect(lastDemand.sales).toBeCloseTo(0.6 * totalDemand, 2);
+        expect(lastDemand.lostToCapacity).toBeCloseTo(0.4 * totalDemand, 2);
+        expect(lastDemand.sales + lastDemand.lostToCapacity).toBeCloseTo(totalDemand, 6);
+
+        const servedNew = partialOffer.customerMemory.reduce((sum, m) => sum + m.newVolumeThisMonth, 0);
+        const servedRepeat = partialOffer.customerMemory.reduce((sum, m) => sum + m.retainedVolumeThisMonth, 0);
+        const unservedRepeat = partialOffer.customerMemory.reduce((sum, m) => sum + m.unservedRepeatDemandThisMonth, 0);
+        const unservedNew = lastDemand.lostToCapacity - unservedRepeat;
+
+        expect(servedNew + servedRepeat).toBeCloseTo(lastDemand.sales, 3);
+        // Aucune priorité cachée : le ratio new/repeat SERVI == le ratio new/repeat DEMANDÉ.
+        if (repeatDemand > 0) {
+          expect(servedNew / servedRepeat).toBeCloseTo(newDemand / repeatDemand, 1);
+          expect(unservedNew / unservedRepeat).toBeCloseTo(newDemand / repeatDemand, 1);
+        }
+      });
+
+      it("non-double-comptage de la réputation : même demande captée/capacité, réputation de départ différente -> mêmes ventes exécutées (spec §8, §9)", () => {
+        const probe = resolveWithCapacity(fixture, memory, 1_000_000);
+        const totalDemand = probe.updated.business.offers[0]!.lastDemand!.demand;
+        const coefficient = probe.updated.business.offers[0]!.lastDemand!.capacity / 1_000_000;
+        const founderHoursForHalfCapacity = (0.5 * totalDemand) / coefficient;
+
+        const ownedLowRep = ownedWithOffer(fixture, memory);
+        const ownedHighRep = { ...ownedLowRep, familyState: { ...ownedLowRep.familyState, reputationScore: 0.95 } as typeof ownedLowRep.familyState };
+
+        const low = resolveBusinessMonth(ownedLowRep, actionFor(fixture, founderHoursForHalfCapacity), DEMAND_SHARE_FIXTURE, LEADERSHIP_SKILL, createRng(1), DATE, fixture.market);
+        const high = resolveBusinessMonth(ownedHighRep, actionFor(fixture, founderHoursForHalfCapacity), DEMAND_SHARE_FIXTURE, LEADERSHIP_SKILL, createRng(1), DATE, fixture.market);
+
+        // La réputation influence encore `totalDemand` lui-même (via `computeOfferDemand`,
+        // inchangé) : ce test compare directement les VENTES EXÉCUTÉES à demande/capacité
+        // FIXÉES par construction (même `founderHoursAllocated`), pas la demande elle-même.
+        expect(high.updated.business.offers[0]!.lastDemand!.sales).toBeCloseTo(low.updated.business.offers[0]!.lastDemand!.sales, 6);
+      });
+    });
+  }
+
+  describe("exemple numérique obligatoire (spec §12, §15) : newDemand≈80/repeatDemand≈20/capacity=50 -> newSales≈40/repeatSales≈10", () => {
+    for (const label of ["Service", "Hospitality"] as const) {
+      it(label, () => {
+        const fixture = FAMILIES.find((f) => f.label === label)!;
+
+        // Étape 1 — sans mémoire préalable (repeatDemand = 0) : lit `newDemand` pur.
+        const purelyNew = resolveWithCapacity(fixture, [], 1_000_000);
+        const newDemand = purelyNew.updated.business.offers[0]!.lastDemand!.demand;
+        const coefficient = purelyNew.updated.business.offers[0]!.lastDemand!.capacity / 1_000_000;
+
+        // Étape 2 — calibre `retainedBaseVolume` pour repeatDemand ≈ newDemand/4 (ratio 4:1 -> 80/20 sur 100).
+        const repeatRateAt90 = 0.9; // computeRepeatRate(90) = clamp(90/100, 0.05, 0.95) = 0.9, frustration = 0.
+        const targetRepeatDemand = newDemand / 4;
+        const memory = [seededMemoryFor(fixture, { retainedBaseVolume: targetRepeatDemand / repeatRateAt90 })];
+
+        const probe = resolveWithCapacity(fixture, memory, 1_000_000);
+        const probeOffer = probe.updated.business.offers[0]!;
+        const totalDemand = probeOffer.lastDemand!.demand;
+        const repeatDemand = probeOffer.customerMemory.reduce((sum, m) => sum + m.repeatDemandThisMonth, 0);
+        // Vérifie le ratio visé (tolérance large : `computeOfferDemand` a une légère
+        // sensibilité résiduelle à la mémoire via le bouche-à-oreille organique).
+        expect(repeatDemand / totalDemand).toBeCloseTo(0.2, 1);
+
+        // Étape 3 — capacité fixée à 50% de la demande totale.
+        const partial = resolveWithCapacity(fixture, memory, (0.5 * totalDemand) / coefficient);
+        const partialOffer = partial.updated.business.offers[0]!;
+        const lastDemand = partialOffer.lastDemand!;
+        const servedNew = partialOffer.customerMemory.reduce((sum, m) => sum + m.newVolumeThisMonth, 0);
+        const servedRepeat = partialOffer.customerMemory.reduce((sum, m) => sum + m.retainedVolumeThisMonth, 0);
+        const unservedRepeat = partialOffer.customerMemory.reduce((sum, m) => sum + m.unservedRepeatDemandThisMonth, 0);
+        const unservedNew = lastDemand.lostToCapacity - unservedRepeat;
+
+        // ≈ 40/10/40/10 sur une base ≈ 100 (tolérance 15% relative, cohérente avec le "≈" de l'énoncé).
+        expect(servedNew / totalDemand).toBeCloseTo(0.4, 1);
+        expect(servedRepeat / totalDemand).toBeCloseTo(0.1, 1);
+        expect(unservedNew / totalDemand).toBeCloseTo(0.4, 1);
+        expect(unservedRepeat / totalDemand).toBeCloseTo(0.1, 1);
+      });
+    }
+  });
+
+  it("Retail : une vraie contrainte de stock reste appliquée normalement (pas supprimée par erreur avec conversionRate, spec §6, §8)", () => {
+    const fixture = FAMILIES.find((f) => f.label === "Retail")!;
+    const memory = [seededMemoryFor(fixture)];
+    // Stock délibérément inférieur à la capacité main-d'œuvre ET à la demande totale.
+    const constrainedFixture: FamilyFixture = { ...fixture, decisions: { family: "retail", stockUnits: 30 } };
+    const result = resolveWithCapacity(constrainedFixture, memory, 1_000_000); // capacité main-d'œuvre énorme, mais stock = 30
+    const lastDemand = result.updated.business.offers[0]!.lastDemand!;
+    expect(lastDemand.capacity).toBe(30);
+    expect(lastDemand.sales).toBe(30);
+    expect(lastDemand.lostToCapacity).toBeCloseTo(lastDemand.demand - 30, 6);
+  });
+
+  it("ANTI-ANCIENNE-ARCHITECTURE (intégration) : demande captée == capacité -> ventes == demande EXACTEMENT pour les 4 familles transactionnelles (spec §16)", () => {
+    for (const fixture of FAMILIES) {
+      const memory = [seededMemoryFor(fixture)];
+      const probe = resolveWithCapacity(fixture, memory, 1_000_000);
+      const probeDemand = probe.updated.business.offers[0]!.lastDemand!;
+      const totalDemand = probeDemand.demand;
+      const coefficient = probeDemand.capacity / 1_000_000;
+
+      const exact = resolveWithCapacity(fixture, memory, totalDemand / coefficient);
+      const exactDemand = exact.updated.business.offers[0]!.lastDemand!;
+      // Sous l'ancien moteur (utilizationRate/fillRate/conversionRate/winRate aléatoires),
+      // `sales` était presque toujours strictement < `demand`, même à capacité suffisante.
+      expect(exactDemand.sales, `${fixture.label} : sales devrait être ~= demand`).toBeCloseTo(totalDemand, 3);
     }
   });
 });

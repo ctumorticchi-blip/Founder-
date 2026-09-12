@@ -20,7 +20,11 @@ export default [
     },
     rules: {
       ...tseslint.configs.recommended.rules,
-      "@typescript-eslint/no-unused-vars": "error",
+      // `argsIgnorePattern`/`varsIgnorePattern` alignés sur le comportement déjà actif de
+      // `noUnusedParameters` (tsconfig) : un paramètre requis par une interface mais non
+      // utilisé par une implémentation précise (ex. `_ctx: EconomicEngineContext`, spec
+      // M11.2.3.2) se nomme `_`-préfixé plutôt que d'être supprimé de la signature.
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "@typescript-eslint/explicit-function-return-type": "off",
       "no-restricted-properties": [
         "error",

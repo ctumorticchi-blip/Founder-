@@ -13,16 +13,34 @@ describe("ServiceEngine", () => {
     expect(ServiceEngine.family).toBe("service");
   });
 
-  it("ne vend jamais plus d'heures que min(targetHours, capacityHours)", () => {
+  it("ANTI-RÉGRESSION M11.2.3.2 : demande == capacité -> ventes == demande exactement (aucune seconde loterie commerciale)", () => {
+    const rng = createRng(123);
+    const result = ServiceEngine.computeMonth(STATE, { capacityHours: 100, targetHours: 100 }, { rng });
+    expect(result.hoursSold).toBe(100);
+  });
+
+  it("demande < capacité -> hoursSold == demande (aucune perte)", () => {
     const rng = createRng(1);
-    for (let i = 0; i < 50; i++) {
-      const result = ServiceEngine.computeMonth(
-        STATE,
-        { capacityHours: 100, targetHours: 150 },
-        { rng },
-      );
-      expect(result.hoursSold).toBeLessThanOrEqual(100);
-    }
+    const result = ServiceEngine.computeMonth(STATE, { capacityHours: 100, targetHours: 60 }, { rng });
+    expect(result.hoursSold).toBe(60);
+  });
+
+  it("demande > capacité -> hoursSold == capacité", () => {
+    const rng = createRng(1);
+    const result = ServiceEngine.computeMonth(STATE, { capacityHours: 100, targetHours: 150 }, { rng });
+    expect(result.hoursSold).toBe(100);
+  });
+
+  it("demande nulle -> aucune vente", () => {
+    const rng = createRng(1);
+    const result = ServiceEngine.computeMonth(STATE, { capacityHours: 100, targetHours: 0 }, { rng });
+    expect(result.hoursSold).toBe(0);
+  });
+
+  it("capacité nulle -> aucune vente même si la demande est positive", () => {
+    const rng = createRng(1);
+    const result = ServiceEngine.computeMonth(STATE, { capacityHours: 0, targetHours: 100 }, { rng });
+    expect(result.hoursSold).toBe(0);
   });
 
   it("revenue et variableCosts sont cohérents avec hoursSold", () => {
@@ -50,38 +68,32 @@ describe("ServiceEngine", () => {
     expect(resultA).toEqual(resultB);
   });
 
-  it("une meilleure réputation augmente statistiquement le taux de remplissage", () => {
-    const lowRepRng = createRng(7);
-    const highRepRng = createRng(7);
-    let lowTotal = 0;
-    let highTotal = 0;
-    const trials = 200;
-    for (let i = 0; i < trials; i++) {
-      lowTotal += ServiceEngine.computeMonth(
-        { ...STATE, reputationScore: 0.1 },
-        { capacityHours: 100, targetHours: 100 },
-        { rng: lowRepRng },
-      ).utilizationRate;
-      highTotal += ServiceEngine.computeMonth(
-        { ...STATE, reputationScore: 0.9 },
-        { capacityHours: 100, targetHours: 100 },
-        { rng: highRepRng },
-      ).utilizationRate;
-    }
-    expect(highTotal / trials).toBeGreaterThan(lowTotal / trials);
+  it("déterminisme fort : deux seeds RNG différentes produisent exactement le même volume vendu (spec M11.2.3.2 §10)", () => {
+    const resultA = ServiceEngine.computeMonth(STATE, { capacityHours: 120, targetHours: 150 }, { rng: createRng(1) });
+    const resultB = ServiceEngine.computeMonth(STATE, { capacityHours: 120, targetHours: 150 }, { rng: createRng(999) });
+    expect(resultA.hoursSold).toBe(resultB.hoursSold);
+    expect(resultA.revenue).toBe(resultB.revenue);
   });
 
-  it("utilizationRate reste toujours dans [0, 1]", () => {
+  it("non-double-comptage de la réputation : mêmes demande/capacité, réputation différente -> mêmes ventes exécutées (spec §9)", () => {
+    const rng = createRng(7);
+    const low = ServiceEngine.computeMonth({ ...STATE, reputationScore: 0.1 }, { capacityHours: 100, targetHours: 150 }, { rng });
+    const high = ServiceEngine.computeMonth({ ...STATE, reputationScore: 0.9 }, { capacityHours: 100, targetHours: 150 }, { rng });
+    expect(high.hoursSold).toBe(low.hoursSold);
+    expect(high.revenue).toBe(low.revenue);
+  });
+
+  it("utilizationRate est une métrique purement descriptive : utilizationRate === hoursSold / capacityHours", () => {
     const rng = createRng(99);
-    for (let i = 0; i < 200; i++) {
-      const result = ServiceEngine.computeMonth(
-        STATE,
-        { capacityHours: 100, targetHours: 100 },
-        { rng },
-      );
-      expect(result.utilizationRate).toBeGreaterThanOrEqual(0);
-      expect(result.utilizationRate).toBeLessThanOrEqual(1);
-    }
+    const result = ServiceEngine.computeMonth(STATE, { capacityHours: 80, targetHours: 150 }, { rng });
+    expect(result.hoursSold).toBe(80);
+    expect(result.utilizationRate).toBeCloseTo(result.hoursSold / 80, 10);
+  });
+
+  it("utilizationRate vaut 0 quand capacityHours est nul (division évitée, jamais NaN)", () => {
+    const rng = createRng(99);
+    const result = ServiceEngine.computeMonth(STATE, { capacityHours: 0, targetHours: 50 }, { rng });
+    expect(result.utilizationRate).toBe(0);
   });
 
   it("rejette une capacité ou une cible négative", () => {

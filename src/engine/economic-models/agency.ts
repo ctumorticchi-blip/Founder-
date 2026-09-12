@@ -1,14 +1,18 @@
-import { clamp } from "../util/math.js";
 import type { EconomicEngine, EconomicEngineContext } from "./economic-engine.js";
 import type { EconomicContribution } from "../../types/business.js";
 
 /**
  * Famille "Agency/B2B" (spec §7) : marketing, recrutement, conseil. Revenus
- * par mandats plutôt qu'à l'unité produite ; le taux de transformation des
- * mandats visés dépend fortement de la réputation et de la compétence de
- * l'équipe (`skillFactor`, 0-1 — reflet des compétences du personnage,
- * fournies par l'appelant tant que le Character Engine n'est pas branché
- * directement au moteur économique).
+ * par mandats plutôt qu'à l'unité produite. `targetMandates` est déjà la
+ * demande RÉELLEMENT captée par le Demand Engine (`computeOfferDemand` +
+ * `computeRepeatDemand`, spec M11.2.2/M11.2.3.1) : ce moteur ne fait plus
+ * que la comparer à la capacité livrable — aucune seconde probabilité
+ * commerciale (réputation/compétence/bruit) ne doit plus réduire une
+ * demande déjà captée (spec M11.2.3.2 §1, §4). `skillFactor` (0-1 —
+ * reflet des compétences du personnage, fournies par l'appelant tant que
+ * le Character Engine n'est pas branché directement au moteur économique)
+ * reste dans l'état pour un futur rôle (négociation, Strategic Accounts,
+ * hors scope M11.2.4) mais ne pilote plus l'exécution ici.
  */
 export interface AgencyEngineState {
   readonly averageMonthlyFeePerMandate: number;
@@ -27,18 +31,14 @@ export interface AgencyEngineDecisions {
 
 export interface AgencyMonthContribution extends EconomicContribution {
   readonly wonMandates: number;
+  /** Métrique descriptive (`wonMandates / capacityMandates`) — ne pilote plus jamais `wonMandates` (spec M11.2.3.2 §4, §11). */
   readonly winRate: number;
 }
-
-const BASE_WIN_RATE = 0.3;
-const REPUTATION_WIN_RATE_BONUS = 0.25;
-const SKILL_WIN_RATE_BONUS = 0.25;
-const WIN_RATE_NOISE_STD_DEV = 0.05;
 
 function computeAgencyMonth(
   state: AgencyEngineState,
   decisions: AgencyEngineDecisions,
-  ctx: EconomicEngineContext,
+  _ctx: EconomicEngineContext,
 ): AgencyMonthContribution {
   if (decisions.capacityMandates < 0) {
     throw new RangeError(`AgencyEngine: capacityMandates=${decisions.capacityMandates} doit être >= 0.`);
@@ -58,12 +58,8 @@ function computeAgencyMonth(
     );
   }
 
-  const demandCap = Math.min(decisions.targetMandates, decisions.capacityMandates);
-  const baseWinRate =
-    BASE_WIN_RATE + state.reputationScore * REPUTATION_WIN_RATE_BONUS + state.skillFactor * SKILL_WIN_RATE_BONUS;
-  const noise = ctx.rng.nextGaussian(0, WIN_RATE_NOISE_STD_DEV);
-  const winRate = clamp(baseWinRate + noise, 0, 1);
-  const wonMandates = demandCap * winRate;
+  const wonMandates = Math.min(decisions.targetMandates, decisions.capacityMandates);
+  const winRate = decisions.capacityMandates > 0 ? wonMandates / decisions.capacityMandates : 0;
   const revenue = wonMandates * state.averageMonthlyFeePerMandate;
 
   return {
