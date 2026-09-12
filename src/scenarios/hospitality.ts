@@ -1,5 +1,6 @@
 import { createInitialGameState } from "../engine/simulation/game.js";
 import type { BusinessAction, GameState, MonthActions } from "../engine/simulation/types.js";
+import type { OfferAction } from "../types/offer.js";
 import { HOSPITALITY_MARKET } from "./markets.js";
 
 /**
@@ -15,6 +16,8 @@ export const HOSPITALITY_BUSINESS_ID = "resto-co";
 const JOB_PHASE_MONTHS = 18;
 const JOB_HOURLY_WAGE = 13;
 const FITOUT_CAPEX = 40_000;
+const HOSPITALITY_OFFER_ID = "resto-co-offer-1";
+const HOSPITALITY_PROSPECTION_HOURS = 20;
 
 export function createHospitalityScenarioInitialState(seed: number): GameState {
   return createInitialGameState(seed, HOSPITALITY_SCENARIO_BIRTH_DATE, HOSPITALITY_SCENARIO_START_DATE, [
@@ -30,7 +33,7 @@ function targetHeadcountForCash(cash: number): number {
 }
 
 function founderHoursForHeadcount(headcount: number): number {
-  return Math.max(20, 150 - headcount * 5);
+  return Math.max(20, 150 - HOSPITALITY_PROSPECTION_HOURS - headcount * 5);
 }
 
 export function buildHospitalityScenarioActions(monthIndex: number, state: GameState): MonthActions {
@@ -51,10 +54,20 @@ export function buildHospitalityScenarioActions(monthIndex: number, state: GameS
   const targetHeadcount = targetHeadcountForCash(cash);
   const founderHours = founderHoursForHeadcount(Math.max(currentHeadcount, targetHeadcount));
 
+  const offerActions: OfferAction[] = isCreationMonth
+    ? [
+        {
+          kind: "create",
+          spec: { id: HOSPITALITY_OFFER_ID, name: "Carte Resto & Co", businessModel: "service-hours", positioning: "standard", targetSegment: "", price: 26 },
+        },
+        { kind: "launch", offerId: HOSPITALITY_OFFER_ID },
+      ]
+    : [];
+
   const businessAction: BusinessAction = {
     businessId: HOSPITALITY_BUSINESS_ID,
     founderHoursAllocated: founderHours,
-    founderProspectionHoursAllocated: 0,
+    founderProspectionHoursAllocated: HOSPITALITY_PROSPECTION_HOURS,
     headcountCapacity: Number.POSITIVE_INFINITY,
     storageCapacity: Number.POSITIVE_INFINITY,
     ...(isCreationMonth
@@ -71,7 +84,8 @@ export function buildHospitalityScenarioActions(monthIndex: number, state: GameS
           capex: FITOUT_CAPEX,
         }
       : {}),
-    decisions: { family: "hospitality", averageTicketPrice: 26, expectedDemandCovers: 100_000 },
+    offerActions,
+    decisions: { family: "hospitality" },
     marketingBudget: 300 + currentHeadcount * 30,
     rentBudget: 1_500 + currentHeadcount * 50,
     adminBudget: 200 + currentHeadcount * 40,
@@ -79,7 +93,7 @@ export function buildHospitalityScenarioActions(monthIndex: number, state: GameS
   };
 
   return {
-    timeAllocation: { emploi: 0, apprentissage: 0, business: founderHours, reseau: 0 },
+    timeAllocation: { emploi: 0, apprentissage: 0, business: founderHours + HOSPITALITY_PROSPECTION_HOURS, reseau: 0 },
     jobHourlyWage: null,
     businessActions: [businessAction],
   };

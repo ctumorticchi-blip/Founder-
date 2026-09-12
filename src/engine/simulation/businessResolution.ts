@@ -24,9 +24,13 @@ import { RetailEngine } from "../economic-models/retail.js";
 import { AgencyEngine } from "../economic-models/agency.js";
 import { createBusiness } from "../business/treasury.js";
 import { createWorkforce } from "../employees/employees.js";
+import { getMarketSegments } from "../market/segments.js";
+import { computeOfferDemand } from "../market/demand.js";
 import type { MonthlyFinancialStatement } from "../../types/business.js";
 import type { OwnedProperty } from "../../types/realEstate.js";
 import type { Offer, OfferAction } from "../../types/offer.js";
+import type { DemandFunnelResult } from "../../types/demand.js";
+import type { Market } from "../../types/market.js";
 import type { BusinessAction, BusinessFamilyState, CreateBusinessSpec, OwnedBusiness } from "./types.js";
 
 const INITIAL_REPUTATION_SCORE = 0.1;
@@ -173,6 +177,7 @@ export function resolveBusinessMonth(
   founderLeadershipSkill: number,
   rng: Rng,
   date: GameDate,
+  market: Market,
 ): ResolvedBusinessMonth {
   if (!action.decisions) {
     throw new RangeError(`resolveBusinessMonth: businessId="${action.businessId}" nécessite des décisions ce mois-ci.`);
@@ -183,97 +188,258 @@ export function resolveBusinessMonth(
       ? adjustHeadcount(owned.workforce, action.targetHeadcount)
       : { workforce: owned.workforce, hired: 0, fired: 0, recruitmentCost: 0, severanceCost: 0 };
 
+  // Offres (spec M11.2.2 §6) : appliquées AVANT le calcul économique du mois
+  // pour qu'une offre créée/lancée/repriceé ce mois-ci pèse immédiatement
+  // sur la demande captée (ex. lancer une offre -> observer les premiers
+  // clients le mois même).
+  const { offers: offersAfterActions, developmentSpend } = applyOfferActions(
+    owned.business.offers,
+    action.offerActions ?? [],
+    date,
+  );
+
   let familyState: BusinessFamilyState = owned.familyState;
-  let revenue: number;
-  let variableCosts: number;
+  let revenue = 0;
+  let variableCosts = 0;
+  let offersWithDemand: readonly Offer[] = offersAfterActions;
 
   switch (action.decisions.family) {
     case "service": {
       const state = requireFamilyState(owned.familyState, "service");
-      const capacityHours =
+      const segments = getMarketSegments(market.family);
+      const launchedOffers = offersAfterActions.filter((offer) => offer.status === "launched");
+      let remainingCapacityHours =
         action.founderHoursAllocated + computeWorkforceCapacityHours(headcountResult.workforce, founderLeadershipSkill);
-      const contribution = computeServiceMonth(
-        { hourlyRate: action.decisions.price, costPerLaborHour: state.costPerLaborHour, reputationScore: state.reputationScore },
-        { capacityHours, targetHours: action.decisions.targetHours * demandShare },
-        { rng: rng.fork(`business:${owned.id}:service`) },
+      let totalRevenue = 0;
+      let totalVariableCosts = 0;
+      let totalHoursSold = 0;
+      const demandById = new Map<string, DemandFunnelResult>();
+      for (const offer of launchedOffers) {
+        const funnel = computeOfferDemand(offer, market, segments, {
+          demandShare,
+          reputationScore: state.reputationScore,
+          prospectionHours: action.founderProspectionHoursAllocated,
+          date,
+        });
+        const capacityForOffer = remainingCapacityHours;
+        const contribution = computeServiceMonth(
+          { hourlyRate: offer.price, costPerLaborHour: state.costPerLaborHour, reputationScore: state.reputationScore },
+          { capacityHours: capacityForOffer, targetHours: funnel.demand },
+          { rng: rng.fork(`business:${owned.id}:service:${offer.id}`) },
+        );
+        totalRevenue += contribution.revenue;
+        totalVariableCosts += contribution.variableCosts;
+        totalHoursSold += contribution.hoursSold;
+        remainingCapacityHours = Math.max(0, remainingCapacityHours - contribution.hoursSold);
+        demandById.set(offer.id, {
+          ...funnel,
+          capacity: capacityForOffer,
+          sales: contribution.hoursSold,
+          lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
+        });
+      }
+      revenue = totalRevenue;
+      variableCosts = totalVariableCosts;
+      familyState =
+        launchedOffers.length > 0
+          ? { ...state, reputationScore: clamp(state.reputationScore + totalHoursSold * 0.0005, 0, 1) }
+          : state;
+      offersWithDemand = offersAfterActions.map((offer) =>
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
       );
-      revenue = contribution.revenue;
-      variableCosts = contribution.variableCosts;
-      familyState = { ...state, reputationScore: clamp(state.reputationScore + contribution.hoursSold * 0.0005, 0, 1) };
       break;
     }
     case "hospitality": {
       const state = requireFamilyState(owned.familyState, "hospitality");
+      const segments = getMarketSegments(market.family);
+      const launchedOffers = offersAfterActions.filter((offer) => offer.status === "launched");
       const capacityHours =
         action.founderHoursAllocated + computeWorkforceCapacityHours(headcountResult.workforce, founderLeadershipSkill);
-      const coversCapacity = capacityHours / LABOR_HOURS_PER_COVER;
-      const contribution = computeHospitalityMonth(
-        {
-          averageTicketPrice: action.decisions.averageTicketPrice,
-          foodCostPerCover: state.foodCostPerCover,
+      let remainingCoversCapacity = capacityHours / LABOR_HOURS_PER_COVER;
+      let totalRevenue = 0;
+      let totalVariableCosts = 0;
+      let totalCoversServed = 0;
+      const demandById = new Map<string, DemandFunnelResult>();
+      for (const offer of launchedOffers) {
+        const funnel = computeOfferDemand(offer, market, segments, {
+          demandShare,
           reputationScore: state.reputationScore,
-        },
-        { coversCapacity, expectedDemandCovers: action.decisions.expectedDemandCovers * demandShare },
-        { rng: rng.fork(`business:${owned.id}:hospitality`) },
+          prospectionHours: action.founderProspectionHoursAllocated,
+          date,
+        });
+        const capacityForOffer = remainingCoversCapacity;
+        const contribution = computeHospitalityMonth(
+          { averageTicketPrice: offer.price, foodCostPerCover: state.foodCostPerCover, reputationScore: state.reputationScore },
+          { coversCapacity: capacityForOffer, expectedDemandCovers: funnel.demand },
+          { rng: rng.fork(`business:${owned.id}:hospitality:${offer.id}`) },
+        );
+        totalRevenue += contribution.revenue;
+        totalVariableCosts += contribution.variableCosts;
+        totalCoversServed += contribution.coversServed;
+        remainingCoversCapacity = Math.max(0, remainingCoversCapacity - contribution.coversServed);
+        demandById.set(offer.id, {
+          ...funnel,
+          capacity: capacityForOffer,
+          sales: contribution.coversServed,
+          lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
+        });
+      }
+      revenue = totalRevenue;
+      variableCosts = totalVariableCosts;
+      familyState =
+        launchedOffers.length > 0
+          ? { ...state, reputationScore: clamp(state.reputationScore + totalCoversServed * 0.0002, 0, 1) }
+          : state;
+      offersWithDemand = offersAfterActions.map((offer) =>
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
       );
-      revenue = contribution.revenue;
-      variableCosts = contribution.variableCosts;
-      familyState = { ...state, reputationScore: clamp(state.reputationScore + contribution.coversServed * 0.0002, 0, 1) };
       break;
     }
     case "subscription": {
       const state = requireFamilyState(owned.familyState, "subscription");
+      const segments = getMarketSegments(market.family);
+      const launchedOffers = offersAfterActions.filter((offer) => offer.status === "launched");
+      // Substitut de réputation (spec M11.2.2 §6.2) : `subscription` ne
+      // porte pas de `reputationScore` dans son état — un churn de base
+      // faible traduit une confiance déjà installée, faute de mieux tant
+      // que la famille n'a pas sa propre mesure de réputation.
+      const reputationProxy = clamp(1 - state.churnRateBase, 0, 1);
+      let totalNewSubscribers = 0;
+      const demandById = new Map<string, DemandFunnelResult>();
+      for (const offer of launchedOffers) {
+        const funnel = computeOfferDemand(offer, market, segments, {
+          demandShare,
+          reputationScore: reputationProxy,
+          prospectionHours: action.founderProspectionHoursAllocated,
+          date,
+        });
+        totalNewSubscribers += funnel.demand;
+        // `computeSubscriptionMonth` n'a aucun plafond d'admission (vérifié
+        // à la lecture, spec §6.2) : le funnel le reflète honnêtement au
+        // lieu d'inventer une capacité qui n'existe pas dans le moteur.
+        demandById.set(offer.id, { ...funnel, capacity: Infinity, sales: funnel.demand, lostToCapacity: 0 });
+      }
       const requiredHeadcount = state.activeSubscribers / SUBSCRIBERS_PER_SUPPORT_HEADCOUNT;
       const staffingRatio = computeStaffingRatio(headcountResult.workforce.headcount, requiredHeadcount);
       const understaffingPenalty =
         staffingRatio < 1 ? (1 - staffingRatio) * MAX_UNDERSTAFFING_CHURN_PENALTY : 0;
       const effectiveChurnRate = clamp(state.churnRateBase * (1 + understaffingPenalty), 0, 1);
+      // Premier lancé (ordre de création) fixe le tarif du pool mono-tarif
+      // actuel (spec §6.2) — corrige la limitation M11.2.1 où le prix de
+      // l'offre était décoratif pour Subscription.
+      const arpu = launchedOffers[0]?.price ?? state.arpu;
       const contribution = computeSubscriptionMonth(
-        { activeSubscribers: state.activeSubscribers, arpu: state.arpu, churnRate: effectiveChurnRate, cogsRatio: state.cogsRatio },
-        { newSubscribers: action.decisions.newSubscribers * demandShare },
+        { activeSubscribers: state.activeSubscribers, arpu, churnRate: effectiveChurnRate, cogsRatio: state.cogsRatio },
+        { newSubscribers: totalNewSubscribers },
         { rng: rng.fork(`business:${owned.id}:subscription`) },
       );
       revenue = contribution.revenue;
       variableCosts = contribution.variableCosts;
       familyState = { ...state, activeSubscribers: contribution.endingSubscribers };
+      offersWithDemand = offersAfterActions.map((offer) =>
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
+      );
       break;
     }
     case "retail": {
       const state = requireFamilyState(owned.familyState, "retail");
+      const segments = getMarketSegments(market.family);
+      const launchedOffers = offersAfterActions.filter((offer) => offer.status === "launched");
       const capacityHours =
         action.founderHoursAllocated + computeWorkforceCapacityHours(headcountResult.workforce, founderLeadershipSkill);
       const laborCapacityUnits = capacityHours / LABOR_HOURS_PER_UNIT_SOLD;
-      const contribution = RetailEngine.computeMonth(
-        { unitPrice: action.decisions.unitPrice, unitCostOfGoods: state.unitCostOfGoods, reputationScore: state.reputationScore },
-        {
-          stockUnits: Math.min(action.decisions.stockUnits, laborCapacityUnits),
-          expectedFootTraffic: action.decisions.expectedFootTraffic * demandShare,
-        },
-        { rng: rng.fork(`business:${owned.id}:retail`) },
+      let remainingCapacityUnits = Math.min(action.decisions.stockUnits, laborCapacityUnits);
+      let totalRevenue = 0;
+      let totalVariableCosts = 0;
+      let totalUnitsSold = 0;
+      const demandById = new Map<string, DemandFunnelResult>();
+      for (const offer of launchedOffers) {
+        const funnel = computeOfferDemand(offer, market, segments, {
+          demandShare,
+          reputationScore: state.reputationScore,
+          prospectionHours: action.founderProspectionHoursAllocated,
+          date,
+        });
+        const capacityForOffer = remainingCapacityUnits;
+        const contribution = RetailEngine.computeMonth(
+          { unitPrice: offer.price, unitCostOfGoods: state.unitCostOfGoods, reputationScore: state.reputationScore },
+          { stockUnits: capacityForOffer, expectedFootTraffic: funnel.demand },
+          { rng: rng.fork(`business:${owned.id}:retail:${offer.id}`) },
+        );
+        totalRevenue += contribution.revenue;
+        totalVariableCosts += contribution.variableCosts;
+        totalUnitsSold += contribution.unitsSold;
+        remainingCapacityUnits = Math.max(0, remainingCapacityUnits - contribution.unitsSold);
+        demandById.set(offer.id, {
+          ...funnel,
+          capacity: capacityForOffer,
+          sales: contribution.unitsSold,
+          lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
+        });
+      }
+      revenue = totalRevenue;
+      variableCosts = totalVariableCosts;
+      familyState =
+        launchedOffers.length > 0
+          ? { ...state, reputationScore: clamp(state.reputationScore + totalUnitsSold * 0.0003, 0, 1) }
+          : state;
+      offersWithDemand = offersAfterActions.map((offer) =>
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
       );
-      revenue = contribution.revenue;
-      variableCosts = contribution.variableCosts;
-      familyState = { ...state, reputationScore: clamp(state.reputationScore + contribution.unitsSold * 0.0003, 0, 1) };
       break;
     }
     case "agency": {
       const state = requireFamilyState(owned.familyState, "agency");
+      const segments = getMarketSegments(market.family);
+      const launchedOffers = offersAfterActions.filter((offer) => offer.status === "launched");
       const capacityHours =
         action.founderHoursAllocated + computeWorkforceCapacityHours(headcountResult.workforce, founderLeadershipSkill);
-      const capacityMandates = capacityHours / LABOR_HOURS_PER_MANDATE;
-      const contribution = AgencyEngine.computeMonth(
-        {
-          averageMonthlyFeePerMandate: state.averageMonthlyFeePerMandate,
-          deliveryCostRatio: state.deliveryCostRatio,
+      let remainingCapacityMandates = capacityHours / LABOR_HOURS_PER_MANDATE;
+      let totalRevenue = 0;
+      let totalVariableCosts = 0;
+      let totalWonMandates = 0;
+      const demandById = new Map<string, DemandFunnelResult>();
+      for (const offer of launchedOffers) {
+        const funnel = computeOfferDemand(offer, market, segments, {
+          demandShare,
           reputationScore: state.reputationScore,
-          skillFactor: clamp(founderLeadershipSkill / 100, 0, 1),
-        },
-        { capacityMandates, targetMandates: action.decisions.targetMandates * demandShare },
-        { rng: rng.fork(`business:${owned.id}:agency`) },
+          prospectionHours: action.founderProspectionHoursAllocated,
+          date,
+        });
+        const capacityForOffer = remainingCapacityMandates;
+        const contribution = AgencyEngine.computeMonth(
+          {
+            // Corrige la limitation M11.2.1 (spec §6.2) : le prix de
+            // l'offre pilote désormais réellement le CA de l'agence, plus
+            // une constante figée à la création.
+            averageMonthlyFeePerMandate: offer.price,
+            deliveryCostRatio: state.deliveryCostRatio,
+            reputationScore: state.reputationScore,
+            skillFactor: clamp(founderLeadershipSkill / 100, 0, 1),
+          },
+          { capacityMandates: capacityForOffer, targetMandates: funnel.demand },
+          { rng: rng.fork(`business:${owned.id}:agency:${offer.id}`) },
+        );
+        totalRevenue += contribution.revenue;
+        totalVariableCosts += contribution.variableCosts;
+        totalWonMandates += contribution.wonMandates;
+        remainingCapacityMandates = Math.max(0, remainingCapacityMandates - contribution.wonMandates);
+        demandById.set(offer.id, {
+          ...funnel,
+          capacity: capacityForOffer,
+          sales: contribution.wonMandates,
+          lostToCapacity: Math.max(0, funnel.demand - capacityForOffer),
+        });
+      }
+      revenue = totalRevenue;
+      variableCosts = totalVariableCosts;
+      familyState =
+        launchedOffers.length > 0
+          ? { ...state, reputationScore: clamp(state.reputationScore + totalWonMandates * 0.001, 0, 1) }
+          : state;
+      offersWithDemand = offersAfterActions.map((offer) =>
+        demandById.has(offer.id) ? { ...offer, lastDemand: demandById.get(offer.id)! } : offer,
       );
-      revenue = contribution.revenue;
-      variableCosts = contribution.variableCosts;
-      familyState = { ...state, reputationScore: clamp(state.reputationScore + contribution.wonMandates * 0.001, 0, 1) };
       break;
     }
   }
@@ -290,15 +456,6 @@ export function resolveBusinessMonth(
   const totalMortgageInterest = mortgagePayments.reduce((sum, { payment }) => sum + (payment?.interestPortion ?? 0), 0);
   const totalMortgagePrincipal = mortgagePayments.reduce((sum, { payment }) => sum + (payment?.principalPortion ?? 0), 0);
   const totalMaintenance = computeTotalMaintenance(propertiesAfterPayments);
-
-  // Offres (spec M11.2 §3.3) : appliquées avant la comptabilité pour que le
-  // coût de développement de ce mois-ci apparaisse dans les charges de CE
-  // mois-ci, comme la maintenance immobilière.
-  const { offers: offersAfterActions, developmentSpend } = applyOfferActions(
-    owned.business.offers,
-    action.offerActions ?? [],
-    date,
-  );
 
   const interest = computeMonthlyInterest(owned.business.treasury.creditLine) + totalMortgageInterest;
   const statement = computeMonthlyFinancials({
@@ -319,7 +476,7 @@ export function resolveBusinessMonth(
     workingCapitalChange: 0,
   });
 
-  const businessWithPropertyPayments = { ...owned.business, properties: propertiesAfterPayments, offers: offersAfterActions };
+  const businessWithPropertyPayments = { ...owned.business, properties: propertiesAfterPayments, offers: offersWithDemand };
 
   let businessBeforeCashFlow =
     action.capitalInjection && action.capitalInjection > 0

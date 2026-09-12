@@ -1,5 +1,6 @@
 import { createInitialGameState } from "../engine/simulation/game.js";
 import type { BusinessAction, GameState, MonthActions } from "../engine/simulation/types.js";
+import type { OfferAction } from "../types/offer.js";
 import { SERVICE_MARKET } from "./markets.js";
 
 /**
@@ -15,6 +16,8 @@ export const SERVICE_BUSINESS_ID = "service-co";
 
 const JOB_PHASE_MONTHS = 12;
 const JOB_HOURLY_WAGE = 12;
+const SERVICE_OFFER_ID = "service-co-offer-1";
+const SERVICE_PROSPECTION_HOURS = 20;
 
 export function createServiceScenarioInitialState(seed: number): GameState {
   return createInitialGameState(seed, SERVICE_SCENARIO_BIRTH_DATE, SERVICE_SCENARIO_START_DATE, [SERVICE_MARKET]);
@@ -29,9 +32,13 @@ function targetHeadcountForCash(cash: number): number {
   return 100;
 }
 
-/** Le fondateur délègue progressivement à mesure que l'effectif grandit (spec §13-14). */
+/**
+ * Le fondateur délègue progressivement à mesure que l'effectif grandit
+ * (spec §13-14). Plafonné pour laisser la place aux heures de prospection
+ * dans le budget de temps mensuel total (160h).
+ */
 function founderHoursForHeadcount(headcount: number): number {
-  return Math.max(20, 150 - headcount * 5);
+  return Math.max(20, 150 - SERVICE_PROSPECTION_HOURS - headcount * 5);
 }
 
 export function buildServiceScenarioActions(monthIndex: number, state: GameState): MonthActions {
@@ -51,10 +58,23 @@ export function buildServiceScenarioActions(monthIndex: number, state: GameState
   const targetHeadcount = targetHeadcountForCash(cash);
   const founderHours = founderHoursForHeadcount(Math.max(currentHeadcount, targetHeadcount));
 
+  // Offre créée puis lancée au mois de création (spec M11.2.2) : sans offre
+  // lancée, aucune vente n'est possible (le Customer & Demand Engine
+  // remplace l'ancien `targetHours` fixe par la demande réellement captée).
+  const offerActions: OfferAction[] = existing
+    ? []
+    : [
+        {
+          kind: "create",
+          spec: { id: SERVICE_OFFER_ID, name: "Prestations Service Co", businessModel: "service-hours", positioning: "standard", targetSegment: "", price: 45 },
+        },
+        { kind: "launch", offerId: SERVICE_OFFER_ID },
+      ];
+
   const businessAction: BusinessAction = {
     businessId: SERVICE_BUSINESS_ID,
     founderHoursAllocated: founderHours,
-    founderProspectionHoursAllocated: 0,
+    founderProspectionHoursAllocated: SERVICE_PROSPECTION_HOURS,
     headcountCapacity: Number.POSITIVE_INFINITY,
     storageCapacity: Number.POSITIVE_INFINITY,
     ...(existing
@@ -70,10 +90,8 @@ export function buildServiceScenarioActions(monthIndex: number, state: GameState
             creditLineInterestRateAnnual: 0.08,
           },
         }),
-    // targetHours volontairement très supérieur à la capacité : la vente
-    // reste bornée par la capacité (fondateur + effectif), pas par l'effort
-    // commercial, ce qui isole l'effet du recrutement dans la trajectoire.
-    decisions: { family: "service", price: 45, targetHours: 100_000 },
+    offerActions,
+    decisions: { family: "service" },
     marketingBudget: 300 + currentHeadcount * 20,
     rentBudget: 400 + currentHeadcount * 150,
     adminBudget: 150 + currentHeadcount * 50,
@@ -81,7 +99,7 @@ export function buildServiceScenarioActions(monthIndex: number, state: GameState
   };
 
   return {
-    timeAllocation: { emploi: 0, apprentissage: 0, business: founderHours, reseau: 0 },
+    timeAllocation: { emploi: 0, apprentissage: 0, business: founderHours + SERVICE_PROSPECTION_HOURS, reseau: 0 },
     jobHourlyWage: null,
     businessActions: [businessAction],
   };

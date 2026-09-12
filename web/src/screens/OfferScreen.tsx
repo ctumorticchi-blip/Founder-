@@ -3,7 +3,8 @@ import type { OfferAction, OfferPositioning } from "@founder/engine";
 import { computeLaunchThreshold } from "@founder/engine";
 import { useGame } from "../state/GameProvider";
 import { useNavigation } from "../state/Navigation";
-import { offerModelLabel, offerQualityLabel } from "../data/offerModels";
+import { demandSignalLabel, demandUnitLabel, offerModelLabel, offerQualityLabel, priceSignalLabel, visibilityLevelLabel } from "../data/offerModels";
+import { getPublicSegmentOptions } from "../data/publicSegments";
 import { totalFounderBusinessHours } from "../state/draft";
 import { NumberField } from "../components/ui/NumberField";
 
@@ -45,6 +46,7 @@ export function OfferScreen({ businessId, offerId }: { readonly businessId: stri
     );
   }
 
+  const segmentLabel = getPublicSegmentOptions(draftBusiness.family).find((s) => s.id === offer.targetSegment)?.label ?? offer.targetSegment;
   const pendingLaunch = draftBusiness.offerActions.some((a) => a.kind === "launch" && a.offerId === offerId);
   const threshold = computeLaunchThreshold(offer.businessModel);
   const canLaunch = offer.status === "in-development" && offer.maturity >= threshold && !pendingLaunch;
@@ -79,7 +81,62 @@ export function OfferScreen({ businessId, offerId }: { readonly businessId: stri
           {offer.status === "launched" ? "Lancée" : "En développement"}
         </span>
       </div>
-      <p className="screen-subtitle">{offerModelLabel(offer.businessModel, draftBusiness.family)} · {offer.targetSegment}</p>
+      <p className="screen-subtitle">
+        {offerModelLabel(offer.businessModel, draftBusiness.family)}
+        {segmentLabel ? ` · Cible : ${segmentLabel}` : ""}
+      </p>
+
+      {offer.status === "launched" && offer.lastDemand ? (
+        <div className="card stack">
+          <div className="section-title">Marché</div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Clientèle la plus attirée</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{offer.lastDemand.topSegmentLabel}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Demande</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{demandSignalLabel(offer.lastDemand.demandSignal)}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Prix perçu</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{priceSignalLabel(offer.lastDemand.priceSignal)}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Connaissance de l'offre</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{visibilityLevelLabel(offer.lastDemand.visibilityLevel)}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {offer.status === "launched" && offer.lastDemand ? (
+        <div className="card stack">
+          <div className="section-title">Ce mois-ci</div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Clients atteints</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{Math.round(offer.lastDemand.reached).toLocaleString("fr-FR")}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Intéressés</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{Math.round(offer.lastDemand.interested).toLocaleString("fr-FR")}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Demande ({demandUnitLabel(draftBusiness.family)})</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{Math.round(offer.lastDemand.demand).toLocaleString("fr-FR")}</span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Ventes réalisées</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>{Math.round(offer.lastDemand.sales).toLocaleString("fr-FR")}</span>
+          </div>
+          {offer.lastDemand.lostToCapacity > 0 ? (
+            <div className="row row--between">
+              <span className="text-sm text-secondary">Ventes perdues (capacité insuffisante)</span>
+              <span className="text-sm" style={{ fontWeight: 700, color: "var(--danger)" }}>
+                {Math.round(offer.lastDemand.lostToCapacity).toLocaleString("fr-FR")}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {offer.status === "in-development" ? (
         <div className="card stack">

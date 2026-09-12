@@ -29,13 +29,25 @@ export type BusinessFamilyState =
       readonly deliveryCostRatio: number;
     };
 
-/** Décisions mensuelles propres à chaque famille (hors budgets transversaux, communs à toutes). */
+/**
+ * Décisions mensuelles propres à chaque famille (hors budgets transversaux,
+ * communs à toutes). Depuis M11.2.2, ni la cible commerciale
+ * (`targetHours`/`expectedDemandCovers`/`newSubscribers`/
+ * `expectedFootTraffic`/`targetMandates`) ni le prix
+ * (`price`/`averageTicketPrice`/`unitPrice`) ne sont plus des décisions du
+ * joueur ici : la cible est calculée par le Customer & Demand Engine
+ * (`computeOfferDemand`) à partir des offres lancées, des segments du
+ * marché et de la demande captée, et le prix vient de `offer.price` — fixé
+ * à la création puis ajusté via l'action `"update-pricing"` sur l'offre
+ * (spec M11.2.2 §6.2, §9). `retail.stockUnits` reste : c'est une
+ * contrainte d'inventaire réelle, indépendante de la demande et du prix.
+ */
 export type BusinessFamilyDecisions =
-  | { readonly family: "service"; readonly price: number; readonly targetHours: number }
-  | { readonly family: "hospitality"; readonly averageTicketPrice: number; readonly expectedDemandCovers: number }
-  | { readonly family: "subscription"; readonly newSubscribers: number }
-  | { readonly family: "retail"; readonly unitPrice: number; readonly stockUnits: number; readonly expectedFootTraffic: number }
-  | { readonly family: "agency"; readonly targetMandates: number };
+  | { readonly family: "service" }
+  | { readonly family: "hospitality" }
+  | { readonly family: "subscription" }
+  | { readonly family: "retail"; readonly stockUnits: number }
+  | { readonly family: "agency" };
 
 /** Une entreprise possédée par le joueur (spec §3 : plusieurs entreprises et familles possibles). */
 export interface OwnedBusiness {

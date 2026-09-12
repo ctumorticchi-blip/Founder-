@@ -154,6 +154,11 @@ export {
   updateOfferPricing,
 } from "./engine/business/offer.js";
 
+export type { CustomerSegment } from "./types/customerSegment.js";
+export type { DemandFunnelResult, DemandSignal, FitBreakdown, PriceSignal, VisibilityLevel } from "./types/demand.js";
+export { getMarketSegments } from "./engine/market/segments.js";
+export { computeOfferDemand, computeSegmentFit } from "./engine/market/demand.js";
+
 export type { SaleClosing, SaleDecision, SaleOffer, SaleProcessState, SaleStatus } from "./types/sale.js";
 export {
   COUNTER_OFFER_ACCEPTANCE_MULTIPLE,

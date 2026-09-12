@@ -1,6 +1,6 @@
 import type { EconomicFamily, Offer, OfferAction } from "@founder/engine";
 import { useNavigation } from "../../state/Navigation";
-import { offerModelLabel } from "../../data/offerModels";
+import { demandSignalLabel, offerModelLabel } from "../../data/offerModels";
 import { Money } from "../ui/Money";
 
 /**
@@ -46,6 +46,7 @@ export function OffersCard({
               </div>
               <p className="text-secondary text-sm" style={{ marginTop: 4 }}>
                 {offerModelLabel(offer.businessModel, family)} · <Money amount={offer.price} />
+                {offer.lastDemand ? ` · Demande ${demandSignalLabel(offer.lastDemand.demandSignal)}` : ""}
               </p>
             </button>
           ))}

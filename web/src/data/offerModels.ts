@@ -1,4 +1,4 @@
-import type { EconomicFamily, OfferBusinessModel } from "@founder/engine";
+import type { DemandSignal, EconomicFamily, OfferBusinessModel, PriceSignal, VisibilityLevel } from "@founder/engine";
 
 /**
  * Vocabulaire métier du moteur d'offre universel (spec M11.2 §3.4bis) : le
@@ -47,4 +47,52 @@ export function offerModelLabel(businessModel: OfferBusinessModel, family: Econo
 
 export function offerQualityLabel(family: EconomicFamily): string {
   return QUALITY_LABELS[family];
+}
+
+/**
+ * Vocabulaire de l'unité native de la demande par famille (spec M11.2.2
+ * §11 : "clients/couverts/commandes/mandats/abonnés selon la famille"),
+ * utilisé pour afficher l'entonnoir de demande (`offer.lastDemand`) sans
+ * jamais nommer une unité technique ("hoursSold", "wonMandates"...).
+ */
+const DEMAND_UNIT_LABELS: Readonly<Record<EconomicFamily, string>> = {
+  service: "heures",
+  hospitality: "couverts",
+  subscription: "abonnés",
+  retail: "commandes",
+  agency: "mandats",
+};
+
+export function demandUnitLabel(family: EconomicFamily): string {
+  return DEMAND_UNIT_LABELS[family];
+}
+
+const DEMAND_SIGNAL_LABELS: Readonly<Record<DemandSignal, string>> = {
+  weak: "faible",
+  moderate: "moyenne",
+  strong: "favorable",
+};
+
+export function demandSignalLabel(signal: DemandSignal): string {
+  return DEMAND_SIGNAL_LABELS[signal];
+}
+
+const PRICE_SIGNAL_LABELS: Readonly<Record<PriceSignal, string>> = {
+  low: "semble bas",
+  fair: "semble correct",
+  high: "semble élevé",
+};
+
+export function priceSignalLabel(signal: PriceSignal): string {
+  return PRICE_SIGNAL_LABELS[signal];
+}
+
+const VISIBILITY_LEVEL_LABELS: Readonly<Record<VisibilityLevel, string>> = {
+  low: "connaissance faible",
+  medium: "connaissance moyenne",
+  high: "connaissance importante",
+};
+
+export function visibilityLevelLabel(level: VisibilityLevel): string {
+  return VISIBILITY_LEVEL_LABELS[level];
 }

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createRng } from "../../../src/engine/rng/rng.js";
 import { createOwnedBusiness, resolveBusinessMonth } from "../../../src/engine/simulation/businessResolution.js";
 import type { BusinessAction, CreateBusinessSpec } from "../../../src/engine/simulation/types.js";
+import type { Market } from "../../../src/types/market.js";
+import type { OfferAction } from "../../../src/types/offer.js";
 
 const SERVICE_SPEC: CreateBusinessSpec = {
   family: "service",
@@ -26,16 +28,54 @@ const SUBSCRIPTION_SPEC: CreateBusinessSpec = {
   creditLineInterestRateAnnual: 0.08,
 };
 
+const SERVICE_MARKET: Market = {
+  id: "market-1",
+  family: "service",
+  sizeMonthlyRevenuePotential: 2_000_000,
+  growthRateMonthly: 0.01,
+  averageMargin: 0.4,
+  fragmentation: 0.8,
+  competitiveIntensity: 0.3,
+  capitalIntensity: 0.1,
+  regulation: 0.2,
+  innovationRate: 0.1,
+  priceSensitivity: 0.5,
+  entryBarriers: 0.2,
+  cyclicality: 0.3,
+};
+
+const SUBSCRIPTION_MARKET: Market = { ...SERVICE_MARKET, id: "market-2", family: "subscription" };
+
 const LEADERSHIP_SKILL = 50;
 const DEMAND_SHARE = 1; // isole l'effet de capacité/effectif de la variance de part de marché.
+// Part de marché infime : isole l'effet de capacité/effectif en gardant la demande captée
+// négligeable devant n'importe quelle capacité testée (remplace l'ancien "targetHours: 5").
+const TINY_DEMAND_SHARE = 0.0005;
 const DATE = { year: 2026, month: 1 };
+
+/** Offre "service" lancée dès la création, prix/positionnement standard — génère une
+ * demande largement capacity-bound sur `SERVICE_MARKET` (spec M11.2.2). */
+function serviceOfferActions(): OfferAction[] {
+  return [
+    { kind: "create", spec: { id: "svc-offer", name: "Prestations", businessModel: "service-hours", positioning: "standard", targetSegment: "", price: 40 } },
+    { kind: "launch", offerId: "svc-offer" },
+  ];
+}
+
+function subscriptionOfferActions(): OfferAction[] {
+  return [
+    { kind: "create", spec: { id: "sub-offer", name: "Abonnement", businessModel: "service-hours", positioning: "standard", targetSegment: "", price: 29 } },
+    { kind: "launch", offerId: "sub-offer" },
+  ];
+}
 
 function serviceAction(overrides: Partial<BusinessAction> = {}): BusinessAction {
   return {
     businessId: "svc",
     founderHoursAllocated: 150,
     founderProspectionHoursAllocated: 0,
-    decisions: { family: "service", price: 40, targetHours: 100_000 }, // capacity-bound par défaut
+    offerActions: serviceOfferActions(),
+    decisions: { family: "service" },
     marketingBudget: 0,
     rentBudget: 0,
     adminBudget: 0,
@@ -65,6 +105,7 @@ describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
       LEADERSHIP_SKILL,
       createRng(1),
       DATE,
+      SERVICE_MARKET,
     );
     const staffedResult = resolveBusinessMonth(
       owned,
@@ -73,6 +114,7 @@ describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
       LEADERSHIP_SKILL,
       createRng(1),
       DATE,
+      SERVICE_MARKET,
     );
 
     expect(staffedResult.statement.revenue).toBeGreaterThan(soloResult.statement.revenue);
@@ -82,8 +124,8 @@ describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
     const owned = createOwnedBusiness("svc", SERVICE_SPEC);
     const action = serviceAction({ targetHeadcount: 5 });
 
-    const lowLeadership = resolveBusinessMonth(owned, action, DEMAND_SHARE, 0, createRng(1), DATE);
-    const highLeadership = resolveBusinessMonth(owned, action, DEMAND_SHARE, 100, createRng(1), DATE);
+    const lowLeadership = resolveBusinessMonth(owned, action, DEMAND_SHARE, 0, createRng(1), DATE, SERVICE_MARKET);
+    const highLeadership = resolveBusinessMonth(owned, action, DEMAND_SHARE, 100, createRng(1), DATE, SERVICE_MARKET);
 
     expect(highLeadership.statement.revenue).toBeGreaterThanOrEqual(lowLeadership.statement.revenue);
   });
@@ -92,14 +134,38 @@ describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
 describe("resolveBusinessMonth — payroll dans le P&L et cash-flow", () => {
   it("le payroll du P&L est exactement effectif * salaire moyen", () => {
     const owned = createOwnedBusiness("svc", SERVICE_SPEC);
-    const result = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 4 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
+    const result = resolveBusinessMonth(
+      owned,
+      serviceAction({ targetHeadcount: 4 }),
+      DEMAND_SHARE,
+      LEADERSHIP_SKILL,
+      createRng(1),
+      DATE,
+      SERVICE_MARKET,
+    );
     expect(result.statement.payroll).toBeCloseTo(4 * SERVICE_SPEC.averageMonthlySalary);
   });
 
   it("le coût réel d'une embauche (recrutement) est imputé au P&L le mois de l'embauche", () => {
     const owned = createOwnedBusiness("svc", SERVICE_SPEC);
-    const withoutHire = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 0 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
-    const withHire = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 3 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
+    const withoutHire = resolveBusinessMonth(
+      owned,
+      serviceAction({ targetHeadcount: 0 }),
+      DEMAND_SHARE,
+      LEADERSHIP_SKILL,
+      createRng(1),
+      DATE,
+      SERVICE_MARKET,
+    );
+    const withHire = resolveBusinessMonth(
+      owned,
+      serviceAction({ targetHeadcount: 3 }),
+      DEMAND_SHARE,
+      LEADERSHIP_SKILL,
+      createRng(1),
+      DATE,
+      SERVICE_MARKET,
+    );
 
     // 3 embauches * 1 mois de salaire de coût de recrutement, imputé en admin.
     expect(withHire.recruitmentCost).toBeCloseTo(3 * SERVICE_SPEC.averageMonthlySalary);
@@ -108,7 +174,15 @@ describe("resolveBusinessMonth — payroll dans le P&L et cash-flow", () => {
 
   it("le licenciement facture un coût de séparation réel", () => {
     const owned = { ...createOwnedBusiness("svc", SERVICE_SPEC), workforce: { headcount: 5, averageMonthlySalary: SERVICE_SPEC.averageMonthlySalary } };
-    const result = resolveBusinessMonth(owned, serviceAction({ targetHeadcount: 1 }), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
+    const result = resolveBusinessMonth(
+      owned,
+      serviceAction({ targetHeadcount: 1 }),
+      DEMAND_SHARE,
+      LEADERSHIP_SKILL,
+      createRng(1),
+      DATE,
+      SERVICE_MARKET,
+    );
     expect(result.fired).toBe(4);
     expect(result.severanceCost).toBeCloseTo(4 * SERVICE_SPEC.averageMonthlySalary);
   });
@@ -117,12 +191,11 @@ describe("resolveBusinessMonth — payroll dans le P&L et cash-flow", () => {
 describe("resolveBusinessMonth — sur-effectif (masse salariale gaspillée sans revenu additionnel)", () => {
   it("un effectif excédentaire face à une demande limitée augmente le payroll sans augmenter le revenu", () => {
     const owned = createOwnedBusiness("svc", SERVICE_SPEC);
-    // targetHours très faible : la vente est bornée par la demande, pas par la capacité.
-    const lowDemandAction = (headcount: number): BusinessAction =>
-      serviceAction({ targetHeadcount: headcount, decisions: { family: "service", price: 40, targetHours: 5 } });
+    // Part de marché infime : la vente est bornée par la demande captée, pas par la capacité.
+    const lowDemandAction = (headcount: number): BusinessAction => serviceAction({ targetHeadcount: headcount });
 
-    const lean = resolveBusinessMonth(owned, lowDemandAction(0), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
-    const overstaffed = resolveBusinessMonth(owned, lowDemandAction(20), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
+    const lean = resolveBusinessMonth(owned, lowDemandAction(0), TINY_DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SERVICE_MARKET);
+    const overstaffed = resolveBusinessMonth(owned, lowDemandAction(20), TINY_DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SERVICE_MARKET);
 
     expect(overstaffed.statement.revenue).toBeCloseTo(lean.statement.revenue, 0);
     expect(overstaffed.statement.payroll).toBeGreaterThan(lean.statement.payroll);
@@ -137,7 +210,8 @@ describe("resolveBusinessMonth — sous-effectif (Subscription : pénalité de c
       businessId: "sub",
       founderHoursAllocated: 100,
       founderProspectionHoursAllocated: 0,
-      decisions: { family: "subscription", newSubscribers: 0 },
+      offerActions: subscriptionOfferActions(),
+      decisions: { family: "subscription" },
       marketingBudget: 0,
       rentBudget: 0,
       adminBudget: 0,
@@ -145,8 +219,8 @@ describe("resolveBusinessMonth — sous-effectif (Subscription : pénalité de c
       storageCapacity: Number.POSITIVE_INFINITY,
     };
 
-    const understaffed = resolveBusinessMonth(owned, { ...action, targetHeadcount: 0 }, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
-    const adequatelyStaffed = resolveBusinessMonth(owned, { ...action, targetHeadcount: 4 }, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE);
+    const understaffed = resolveBusinessMonth(owned, { ...action, targetHeadcount: 0 }, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SUBSCRIPTION_MARKET);
+    const adequatelyStaffed = resolveBusinessMonth(owned, { ...action, targetHeadcount: 4 }, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SUBSCRIPTION_MARKET);
 
     if (understaffed.updated.familyState.family !== "subscription" || adequatelyStaffed.updated.familyState.family !== "subscription") {
       throw new Error("familyState devrait rester 'subscription'");
@@ -162,13 +236,13 @@ describe("resolveBusinessMonth — rejette une famille de décisions incompatibl
       businessId: "svc",
       founderHoursAllocated: 100,
       founderProspectionHoursAllocated: 0,
-      decisions: { family: "subscription", newSubscribers: 10 },
+      decisions: { family: "subscription" },
       marketingBudget: 0,
       rentBudget: 0,
       adminBudget: 0,
       headcountCapacity: Number.POSITIVE_INFINITY,
       storageCapacity: Number.POSITIVE_INFINITY,
     };
-    expect(() => resolveBusinessMonth(owned, wrongAction, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE)).toThrow(RangeError);
+    expect(() => resolveBusinessMonth(owned, wrongAction, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SERVICE_MARKET)).toThrow(RangeError);
   });
 });

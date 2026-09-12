@@ -22,7 +22,7 @@ function serviceAction(overrides: Partial<BusinessAction> = {}): BusinessAction 
       creditLineLimit: 50_000,
       creditLineInterestRateAnnual: 0.08,
     },
-    decisions: { family: "service", price: 40, targetHours: 100 },
+    decisions: { family: "service" },
     marketingBudget: 0,
     rentBudget: 0,
     adminBudget: 0,
@@ -113,7 +113,7 @@ describe("capacité de stockage — retail (spec M11.1.5 §3.2)", () => {
         creditLineLimit: 10_000,
         creditLineInterestRateAnnual: 0.08,
       },
-      decisions: { family: "retail", unitPrice: 15, stockUnits: 500, expectedFootTraffic: 1_000 },
+      decisions: { family: "retail", stockUnits: 500 },
       marketingBudget: 0,
       rentBudget: 0,
       adminBudget: 0,
@@ -128,7 +128,7 @@ describe("capacité de stockage — retail (spec M11.1.5 §3.2)", () => {
     const actions: MonthActions = {
       timeAllocation: { emploi: 0, apprentissage: 0, business: 140, reseau: 0 },
       jobHourlyWage: null,
-      businessActions: [retailAction({ decisions: { family: "retail", unitPrice: 15, stockUnits: 500, expectedFootTraffic: 1_000 }, storageCapacity: 200 })],
+      businessActions: [retailAction({ decisions: { family: "retail", stockUnits: 500 }, storageCapacity: 200 })],
     };
     expect(() => simulateMonth(state, actions, SEED)).toThrow(/capacité de stockage/i);
   });
@@ -138,7 +138,7 @@ describe("capacité de stockage — retail (spec M11.1.5 §3.2)", () => {
     const actions: MonthActions = {
       timeAllocation: { emploi: 0, apprentissage: 0, business: 140, reseau: 0 },
       jobHourlyWage: null,
-      businessActions: [retailAction({ decisions: { family: "retail", unitPrice: 15, stockUnits: 150, expectedFootTraffic: 1_000 }, storageCapacity: 200 })],
+      businessActions: [retailAction({ decisions: { family: "retail", stockUnits: 150 }, storageCapacity: 200 })],
     };
     expect(() => simulateMonth(state, actions, SEED)).not.toThrow();
   });

@@ -2,7 +2,18 @@ import { describe, expect, it } from "vitest";
 import { createInitialGameState } from "../../../src/engine/simulation/game.js";
 import { simulateMonth } from "../../../src/engine/simulation/simulateMonth.js";
 import type { GameState, MonthActions } from "../../../src/engine/simulation/types.js";
+import type { OfferAction } from "../../../src/types/offer.js";
 import { AGENCY_MARKET, RETAIL_MARKET } from "../../../src/scenarios/markets.js";
+
+const RETAIL_OFFER_ACTIONS: OfferAction[] = [
+  { kind: "create", spec: { id: "fleur-offer", name: "Bouquets Fleur Co", businessModel: "service-hours", positioning: "standard", targetSegment: "", price: 15 } },
+  { kind: "launch", offerId: "fleur-offer" },
+];
+
+const AGENCY_OFFER_ACTIONS: OfferAction[] = [
+  { kind: "create", spec: { id: "conseil-offer", name: "Mandat Conseil Co", businessModel: "service-hours", positioning: "standard", targetSegment: "", price: 6_000 } },
+  { kind: "launch", offerId: "conseil-offer" },
+];
 
 const BIRTH_DATE = { year: 2008, month: 1 };
 const START_DATE = { year: 2026, month: 1 };
@@ -31,7 +42,8 @@ function retailCreationActions(founderHours: number): MonthActions {
           creditLineLimit: 20_000,
           creditLineInterestRateAnnual: 0.08,
         },
-        decisions: { family: "retail", unitPrice: 15, stockUnits: 2_000, expectedFootTraffic: 5_000 },
+        decisions: { family: "retail", stockUnits: 2_000 },
+        offerActions: RETAIL_OFFER_ACTIONS,
         marketingBudget: 200,
         rentBudget: 500,
         adminBudget: 100,
@@ -51,7 +63,7 @@ function retailContinuationActions(founderHours: number, targetHeadcount?: numbe
         businessId: "fleur-co",
         founderHoursAllocated: founderHours,
         founderProspectionHoursAllocated: 0,
-        decisions: { family: "retail", unitPrice: 15, stockUnits: 2_000, expectedFootTraffic: 5_000 },
+        decisions: { family: "retail", stockUnits: 2_000 },
         marketingBudget: 200,
         rentBudget: 500,
         adminBudget: 100,
@@ -62,12 +74,6 @@ function retailContinuationActions(founderHours: number, targetHeadcount?: numbe
     ],
   };
 }
-
-// targetMandates volontairement très supérieur à la capacité : la livraison
-// reste bornée par la capacité (fondateur + effectif), pas par l'effort
-// commercial, ce qui isole l'effet du recrutement (même principe que pour
-// Service/Hospitality, voir businessResolution.ts).
-const HIGH_TARGET_MANDATES = 1_000;
 
 function agencyCreationActions(founderHours: number): MonthActions {
   return {
@@ -88,7 +94,8 @@ function agencyCreationActions(founderHours: number): MonthActions {
           creditLineLimit: 30_000,
           creditLineInterestRateAnnual: 0.08,
         },
-        decisions: { family: "agency", targetMandates: HIGH_TARGET_MANDATES },
+        decisions: { family: "agency" },
+        offerActions: AGENCY_OFFER_ACTIONS,
         marketingBudget: 300,
         rentBudget: 400,
         adminBudget: 150,
@@ -108,7 +115,7 @@ function agencyContinuationActions(founderHours: number, targetHeadcount?: numbe
         businessId: "conseil-co",
         founderHoursAllocated: founderHours,
         founderProspectionHoursAllocated: 0,
-        decisions: { family: "agency", targetMandates: HIGH_TARGET_MANDATES },
+        decisions: { family: "agency" },
         marketingBudget: 300,
         rentBudget: 400,
         adminBudget: 150,

@@ -1,4 +1,4 @@
-import { INITIAL_QUALITY_LEVEL, type BusinessFamilyDecisions, type BusinessFamilyState, type EconomicFamily, type GameDate, type Offer, type OfferBusinessModel } from "@founder/engine";
+import { INITIAL_QUALITY_LEVEL, type BusinessFamilyState, type EconomicFamily, type GameDate, type Offer, type OfferBusinessModel } from "@founder/engine";
 import { findOpportunity } from "../data/opportunities";
 import { defaultBusinessIdentity } from "../state/businessIdentity";
 import type { BusinessDraft, BusinessIdentity, MonthDraft, SaveGameV1 } from "../state/types";
@@ -20,19 +20,34 @@ function defaultBusinessModelForFamily(family: EconomicFamily): OfferBusinessMod
 }
 
 /**
+ * Forme des décisions telles que persistées par des sauvegardes antérieures
+ * à M11.2.2 — `price`/`averageTicketPrice`/`unitPrice` existaient alors
+ * dans les décisions du brouillon. Le type courant `BusinessFamilyDecisions`
+ * ne les porte plus (spec M11.2.2 §9) : cette forme lâche sert uniquement à
+ * relire une sauvegarde JSON plus ancienne, jamais à écrire de nouvelles
+ * décisions.
+ */
+interface LegacyPricedDecisions {
+  readonly family: string;
+  readonly price?: number;
+  readonly averageTicketPrice?: number;
+  readonly unitPrice?: number;
+}
+
+/**
  * Prix effectif d'une entreprise avant M11.2 (spec §3.7) : lu depuis les
  * décisions du brouillon pour les familles à prix éditable
  * (service/hospitality/retail), depuis `familyState` pour les familles à
  * prix figé à la création (subscription/agency, spec §0.2, §3.6).
  */
-function extractLegacyPrice(familyState: BusinessFamilyState, decisions: BusinessFamilyDecisions | undefined): number {
+function extractLegacyPrice(familyState: BusinessFamilyState, decisions: LegacyPricedDecisions | undefined): number {
   switch (familyState.family) {
     case "service":
-      return decisions?.family === "service" ? decisions.price : 0;
+      return decisions?.family === "service" ? (decisions.price ?? 0) : 0;
     case "hospitality":
-      return decisions?.family === "hospitality" ? decisions.averageTicketPrice : 0;
+      return decisions?.family === "hospitality" ? (decisions.averageTicketPrice ?? 0) : 0;
     case "retail":
-      return decisions?.family === "retail" ? decisions.unitPrice : 0;
+      return decisions?.family === "retail" ? (decisions.unitPrice ?? 0) : 0;
     case "subscription":
       return familyState.arpu;
     case "agency":
@@ -48,7 +63,7 @@ function extractLegacyPrice(familyState: BusinessFamilyState, decisions: Busines
 function synthesizeLegacyOffer(
   businessId: string,
   familyState: BusinessFamilyState,
-  decisions: BusinessFamilyDecisions | undefined,
+  decisions: LegacyPricedDecisions | undefined,
   date: GameDate,
 ): Offer {
   return {
@@ -65,6 +80,7 @@ function synthesizeLegacyOffer(
     developmentBudgetInvested: 0,
     createdAt: date,
     launchedAt: date,
+    lastDemand: null,
   };
 }
 
@@ -104,14 +120,16 @@ export function migrateSaveGame(raw: unknown): SaveGameV1 {
   const gameState = {
     ...save.gameState,
     businesses: save.gameState.businesses.map((owned) => {
-      const offers: readonly Offer[] = owned.business.offers ?? [
-        synthesizeLegacyOffer(
-          owned.id,
-          owned.familyState,
-          decisionsByBusinessId.get(owned.id),
-          businessIdentities[owned.id]?.createdAt ?? gameStateDate,
-        ),
-      ];
+      const offers: readonly Offer[] = (
+        owned.business.offers ?? [
+          synthesizeLegacyOffer(
+            owned.id,
+            owned.familyState,
+            decisionsByBusinessId.get(owned.id),
+            businessIdentities[owned.id]?.createdAt ?? gameStateDate,
+          ),
+        ]
+      ).map((offer) => ({ ...offer, lastDemand: offer.lastDemand ?? null }));
       return {
         ...owned,
         business: { ...owned.business, properties: owned.business.properties ?? [], offers },

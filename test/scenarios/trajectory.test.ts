@@ -61,13 +61,16 @@ function healthyBusinessAction(withCreation: boolean): MonthActions {
                 creditLineLimit: 15_000,
                 creditLineInterestRateAnnual: 0.08,
               },
+              offerActions: [
+                {
+                  kind: "create" as const,
+                  spec: { id: "clean-co-offer", name: "Prestations Clean Co", businessModel: "service-hours" as const, positioning: "standard" as const, targetSegment: "", price: 45 },
+                },
+                { kind: "launch" as const, offerId: "clean-co-offer" },
+              ],
             }
           : {}),
-        // targetHours volontairement très supérieur à la capacité (fondateur
-        // seul, sans effectif) : la vente est donc bornée par la capacité,
-        // pas par l'effort commercial, ce qui rend le scénario robuste au
-        // tirage aléatoire de la part de marché disponible (concurrence).
-        decisions: { family: "service" as const, price: 45, targetHours: 1_000 },
+        decisions: { family: "service" as const },
         marketingBudget: 300,
         rentBudget: 400,
         adminBudget: 150,
@@ -100,7 +103,7 @@ function ruinousBusinessAction(withCreation: boolean): MonthActions {
               },
             }
           : {}),
-        decisions: { family: "service" as const, price: 2, targetHours: 20 },
+        decisions: { family: "service" as const },
         marketingBudget: 6_000,
         rentBudget: 6_000,
         adminBudget: 6_000,

@@ -47,17 +47,6 @@ function ownedPropertiesFor(gameState: GameState | null, businessId: string): re
   return gameState?.businesses.find((business) => business.id === businessId)?.business.properties ?? [];
 }
 
-/**
- * Prix de l'offre active de l'entreprise (spec M11.2 §3.4) : la première
- * offre `status === "launched"` par ordre de création (le tableau n'est
- * jamais réordonné), ou `null` si aucune offre n'est encore lancée — la
- * traduction `deriveDecisions` transforme alors ce `null` en prix `0`.
- */
-function activeOfferPriceFor(gameState: GameState | null, businessId: string): number | null {
-  const offers = gameState?.businesses.find((business) => business.id === businessId)?.business.offers ?? [];
-  return offers.find((offer) => offer.status === "launched")?.price ?? null;
-}
-
 /** Somme des heures de développement d'offre demandées ce mois-ci pour une entreprise. */
 export function offerDevelopmentHours(offerActions: readonly OfferAction[]): number {
   return offerActions.reduce((sum, action) => sum + (action.kind === "develop" ? action.hours : 0), 0);
@@ -76,13 +65,12 @@ function buildBusinessAction(b: BusinessDraft, gameState: GameState | null): Bus
   const capex = computePurchasesCost(b.purchases) + setupCost;
 
   const listing = b.propertyPurchase ? findPropertyListing(b.propertyPurchase.listingId) : null;
-  const activeOfferPrice = activeOfferPriceFor(gameState, b.businessId);
 
   return {
     businessId: b.businessId,
     founderHoursAllocated: b.founderHoursAllocated,
     founderProspectionHoursAllocated: b.prospectionHours,
-    decisions: deriveDecisions(b.family, b.prospectionHours, b.decisions, activeOfferPrice),
+    decisions: deriveDecisions(b.family, b.decisions),
     marketingBudget: b.marketingBudget,
     rentBudget: computeInfrastructureMonthlyCost(b.infrastructureId),
     adminBudget: computeAdminMonthlyCost(b.adminOptionalIds),

@@ -54,6 +54,7 @@ export function createOffer(spec: OfferCreateSpec, date: GameDate): Offer {
     developmentBudgetInvested: 0,
     createdAt: date,
     launchedAt: null,
+    lastDemand: null,
   };
 }
 

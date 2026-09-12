@@ -11,7 +11,7 @@ import { OffersCard } from "../components/business/OffersCard";
 import { NumberField } from "../components/ui/NumberField";
 import { StatTile } from "../components/ui/StatTile";
 import { Money } from "../components/ui/Money";
-import { totalFounderBusinessHours } from "../state/draft";
+import { offerDevelopmentHours, totalFounderBusinessHours } from "../state/draft";
 import { computeValuation } from "@founder/engine";
 
 const FAMILY_LABELS: Record<string, string> = {
@@ -61,12 +61,20 @@ export function BusinessScreen({ businessId }: { readonly businessId: string }) 
   const treasury = business?.business.treasury ?? null;
   const identity = state.businessIdentities[draftBusiness.businessId];
 
-  // Bornes de temps (spec M11.1.5 §5.3, §7.2) : le budget "business" est
-  // partagé entre TOUTES les entreprises — jamais un dédoublement de temps.
-  const usedByOtherBusinesses = totalFounderBusinessHours(state.draft) - draftBusiness.founderHoursAllocated - draftBusiness.prospectionHours;
+  // Bornes de temps (spec M11.1.5 §5.3, §7.2, étendu M11.2 §3.3) : le budget
+  // "business" est partagé entre TOUTES les entreprises — jamais un
+  // dédoublement de temps. Les heures de développement d'offre en attente
+  // de CETTE entreprise (`offerActions`, queues depuis l'écran Offre)
+  // comptent contre le même budget que Production/Prospection : exclues
+  // ici du calcul pour que les curseurs ne laissent jamais miroiter une
+  // marge qu'un développement en attente a déjà consommée (sinon rejet
+  // tardif, cryptique, à la fin du mois).
+  const thisBusinessDevelopmentHours = offerDevelopmentHours(draftBusiness.offerActions);
+  const usedByOtherBusinesses =
+    totalFounderBusinessHours(state.draft) - draftBusiness.founderHoursAllocated - draftBusiness.prospectionHours - thisBusinessDevelopmentHours;
   const budgetRemainingForThisBusiness = Math.max(0, state.draft.timeAllocation.business - usedByOtherBusinesses);
-  const founderHoursMax = Math.max(0, budgetRemainingForThisBusiness - draftBusiness.prospectionHours);
-  const prospectionHoursMax = Math.max(0, budgetRemainingForThisBusiness - draftBusiness.founderHoursAllocated);
+  const founderHoursMax = Math.max(0, budgetRemainingForThisBusiness - draftBusiness.prospectionHours - thisBusinessDevelopmentHours);
+  const prospectionHoursMax = Math.max(0, budgetRemainingForThisBusiness - draftBusiness.founderHoursAllocated - thisBusinessDevelopmentHours);
 
   const valuation = business?.lastStatement ? computeValuation(business.business, business.lastStatement, business.workforce) : null;
 

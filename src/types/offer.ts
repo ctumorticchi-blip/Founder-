@@ -1,4 +1,5 @@
 import type { GameDate } from "../engine/time/clock.js";
+import type { DemandFunnelResult } from "./demand.js";
 
 /**
  * Modèle économique de l'offre (spec M11.2 §3.2) — vocabulaire universel
@@ -69,6 +70,14 @@ export interface Offer {
   readonly developmentBudgetInvested: number;
   readonly createdAt: GameDate;
   readonly launchedAt: GameDate | null;
+  /**
+   * Dernier entonnoir de demande calculé pour cette offre (spec M11.2.2
+   * §10) — `null` avant le premier mois résolu après lancement (ou pour
+   * une offre encore en développement). Persisté pour que l'écran affiche
+   * "ce mois-ci" sans recalcul côté web (spec §13 : pas de duplication du
+   * calcul de demande dans le web).
+   */
+  readonly lastDemand: DemandFunnelResult | null;
 }
 
 /**

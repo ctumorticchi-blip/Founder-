@@ -161,7 +161,15 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
     }
 
     const demandShare = availableDemandShare(competitions[owned.marketId]!);
-    const resolved = resolveBusinessMonth(owned, action, demandShare, state.character.skills.leadership, rng, nextDate);
+    const resolved = resolveBusinessMonth(
+      owned,
+      action,
+      demandShare,
+      state.character.skills.leadership,
+      rng,
+      nextDate,
+      markets[owned.marketId]!,
+    );
 
     if (isNew) {
       events.push({

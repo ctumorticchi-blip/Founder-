@@ -122,4 +122,49 @@ describe("migrateSaveGame", () => {
     const migrated = migrateSaveGame(LEGACY_M10_SAVE);
     expect(migrated.draft.businesses[0]!.offerActions).toEqual([]);
   });
+
+  it("l'offre historique synthétisée porte lastDemand: null (spec M11.2.2 §10)", () => {
+    const migrated = migrateSaveGame(LEGACY_M10_SAVE);
+    expect(migrated.gameState.businesses[0]!.business.offers[0]!.lastDemand).toBeNull();
+  });
+
+  it("une sauvegarde M11.2.1 (offres déjà présentes, sans lastDemand) se charge sans crash et complète lastDemand: null", () => {
+    const legacyM1121Save = {
+      ...LEGACY_M10_SAVE,
+      gameState: {
+        ...LEGACY_M10_SAVE.gameState,
+        businesses: [
+          {
+            ...LEGACY_M10_SAVE.gameState.businesses[0]!,
+            business: {
+              ...LEGACY_M10_SAVE.gameState.businesses[0]!.business,
+              offers: [
+                {
+                  id: "service-abc123-offer-1",
+                  name: "Offre M11.2.1",
+                  businessModel: "service-hours",
+                  positioning: "standard",
+                  targetSegment: "Particuliers",
+                  price: 45,
+                  status: "launched",
+                  maturity: 100,
+                  qualityLevel: 60,
+                  developmentHoursInvested: 0,
+                  developmentBudgetInvested: 0,
+                  createdAt: { year: 2025, month: 3 },
+                  launchedAt: { year: 2025, month: 3 },
+                  // lastDemand absent : sauvegarde antérieure à M11.2.2.
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const migrated = migrateSaveGame(legacyM1121Save);
+    const offer = migrated.gameState.businesses[0]!.business.offers[0]!;
+    expect(offer.id).toBe("service-abc123-offer-1");
+    expect(offer.lastDemand).toBeNull();
+    expect(offer.price).toBe(45); // continuité de revenu : rien d'autre ne change.
+  });
 });

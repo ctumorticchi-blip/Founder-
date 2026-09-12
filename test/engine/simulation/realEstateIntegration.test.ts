@@ -2,18 +2,25 @@ import { describe, expect, it } from "vitest";
 import { createInitialGameState } from "../../../src/engine/simulation/game.js";
 import { simulateMonth } from "../../../src/engine/simulation/simulateMonth.js";
 import type { BusinessAction, MonthActions } from "../../../src/engine/simulation/types.js";
+import type { OfferAction } from "../../../src/types/offer.js";
 import { SERVICE_MARKET } from "../../../src/scenarios/markets.js";
 
 const BIRTH_DATE = { year: 2008, month: 1 };
 const START_DATE = { year: 2026, month: 1 };
 const SEED = 909;
 
+const CREATE_OFFER: OfferAction = {
+  kind: "create",
+  spec: { id: "svc-offer", name: "Prestations Svc", businessModel: "service-hours", positioning: "standard", targetSegment: "", price: 60 },
+};
+const LAUNCH_OFFER: OfferAction = { kind: "launch", offerId: "svc-offer" };
+
 function serviceAction(overrides: Partial<BusinessAction> = {}): BusinessAction {
   return {
     businessId: "svc",
     founderHoursAllocated: 140,
     founderProspectionHoursAllocated: 0,
-    decisions: { family: "service", price: 60, targetHours: 100_000 },
+    decisions: { family: "service" },
     marketingBudget: 0,
     rentBudget: 0,
     adminBudget: 0,
@@ -34,6 +41,7 @@ function createInitialAction(): BusinessAction {
       creditLineLimit: 200_000,
       creditLineInterestRateAnnual: 0.08,
     },
+    offerActions: [CREATE_OFFER, LAUNCH_OFFER],
   });
 }
 

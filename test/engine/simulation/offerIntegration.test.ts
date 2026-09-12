@@ -15,7 +15,7 @@ function serviceAction(overrides: Partial<BusinessAction> = {}): BusinessAction 
     businessId: "svc",
     founderHoursAllocated: BUSINESS_TIME,
     founderProspectionHoursAllocated: 0,
-    decisions: { family: "service", price: 0, targetHours: 100_000 },
+    decisions: { family: "service" },
     marketingBudget: 0,
     rentBudget: 0,
     adminBudget: 0,

@@ -5,6 +5,7 @@ import { useNavigation } from "../state/Navigation";
 import { generateOfferId } from "../lib/ids";
 import { findOpportunity } from "../data/opportunities";
 import { offerModelLabel, offerModelsForFamily } from "../data/offerModels";
+import { getPublicSegmentOptions } from "../data/publicSegments";
 import { totalFounderBusinessHours } from "../state/draft";
 import { TextField } from "../components/ui/TextField";
 import { NumberField } from "../components/ui/NumberField";
@@ -28,11 +29,12 @@ export function CreateOfferScreen({ businessId }: { readonly businessId: string 
 
   const opportunity = draftBusiness ? findOpportunity(draftBusiness.family) : undefined;
   const modelOptions = draftBusiness ? offerModelsForFamily(draftBusiness.family) : [];
+  const segmentOptions = draftBusiness ? getPublicSegmentOptions(draftBusiness.family) : [];
 
   const [name, setName] = useState("");
   const [businessModel, setBusinessModel] = useState<OfferBusinessModel | null>(modelOptions[0] ?? null);
   const [positioning, setPositioning] = useState<OfferPositioning>("standard");
-  const [targetSegment, setTargetSegment] = useState(draftBusiness?.targetCustomers ?? "");
+  const [targetSegment, setTargetSegment] = useState("");
   const [price, setPrice] = useState(opportunity?.recommendedOfferPrice ?? 0);
   const [developmentHours, setDevelopmentHours] = useState(0);
   const [developmentBudget, setDevelopmentBudget] = useState(0);
@@ -75,7 +77,25 @@ export function CreateOfferScreen({ businessId }: { readonly businessId: string 
         <div className="section-title">Identité de l'offre</div>
         <TextField label="Nom de l'offre" value={name} onChange={setName} required hint="Ex. « Formule Essentiel », « Pack Découverte »." />
         {!nameIsValid ? <span className="text-sm" style={{ color: "var(--danger)" }}>Le nom est obligatoire.</span> : null}
-        <TextField label="Cible" value={targetSegment} onChange={setTargetSegment} hint="À qui s'adresse cette offre ?" />
+      </div>
+
+      <div className="card stack">
+        <div className="section-title">Cible principale</div>
+        <p className="text-sm text-secondary">
+          À qui s'adresse cette offre en priorité ? Les autres clientèles restent accessibles — ce choix donne seulement un avantage raisonnable, jamais une exclusivité.
+        </p>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          {segmentOptions.map((segment) => (
+            <button
+              key={segment.id}
+              type="button"
+              className={`pill${segment.id === targetSegment ? " pill--accent" : ""}`}
+              onClick={() => setTargetSegment(segment.id === targetSegment ? "" : segment.id)}
+            >
+              {segment.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="card stack">

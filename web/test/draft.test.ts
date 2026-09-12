@@ -26,7 +26,7 @@ function makeBusinessDraft(overrides: Partial<BusinessDraft> = {}): BusinessDraf
     description: "Une petite société de service.",
     activity: "Service aux particuliers",
     targetCustomers: "Particuliers",
-    decisions: { family: "service", price: 40, targetHours: 200 },
+    decisions: { family: "service" },
     prospectionHours: 40,
     founderHoursAllocated: 110,
     marketingBudget: 100,
@@ -103,16 +103,15 @@ describe("draft — helpers purs", () => {
     expect(actions.businessActions[0]!.storageCapacity).toBe(200);
   });
 
-  it("buildMonthActions dérive la décision cible depuis prospectionHours (spec M11.1.5 §7), pas depuis decisions.targetHours", () => {
+  it("buildMonthActions ne construit aucune cible commerciale ni prix dans decisions (spec M11.2.2 §9)", () => {
     const draft: MonthDraft = {
       timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
       job: null,
-      businesses: [makeBusinessDraft({ prospectionHours: 40, decisions: { family: "service", price: 40, targetHours: 999_999 } })],
+      businesses: [makeBusinessDraft({ prospectionHours: 40, decisions: { family: "service" } })],
     };
     const actions = buildMonthActions(draft);
     const decisions = actions.businessActions[0]!.decisions;
-    expect(decisions?.family).toBe("service");
-    expect((decisions as { targetHours: number }).targetHours).toBe(400); // 40h * multiplicateur service, pas 999999
+    expect(decisions).toEqual({ family: "service" });
   });
 
   it("buildMonthActions inclut le coût d'installation dans capex uniquement au mois de création", () => {
@@ -242,7 +241,7 @@ describe("draft — helpers purs", () => {
             creditLineLimit: 100,
             creditLineInterestRateAnnual: 0.1,
           },
-          decisions: { family: "service", price: 1, targetHours: 10 },
+          decisions: { family: "service" },
           marketingBudget: 5000,
           infrastructureId: "bureau-intermediaire",
           committedInfrastructureId: "bureau-intermediaire",
@@ -262,66 +261,7 @@ describe("draft — helpers purs", () => {
   });
 });
 
-describe("draft — offres (spec M11.2 §3.4)", () => {
-  it("buildBusinessAction source decisions.price depuis la première offre lancée de l'entreprise", () => {
-    let state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [SERVICE_MARKET]);
-    const offerId = "svc-1-offer-1";
-    const createDraft: MonthDraft = {
-      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
-      job: null,
-      businesses: [
-        makeBusinessDraft({
-          offerActions: [
-            { kind: "create", spec: { id: offerId, name: "Offre Test", businessModel: "service-hours", positioning: "standard", targetSegment: "Particuliers", price: 55 } },
-            { kind: "launch", offerId },
-          ],
-        }),
-      ],
-    };
-    state = simulateMonth(state, buildMonthActions(createDraft), SEED);
-    const nextDraft = deriveNextDraft(createDraft, state);
-
-    const actions = buildMonthActions(nextDraft, state);
-    const decisions = actions.businessActions[0]!.decisions;
-    if (decisions?.family !== "service") throw new Error("devrait rester 'service'");
-    expect(decisions.price).toBe(55);
-  });
-
-  it("aucune offre lancée -> decisions.price vaut 0", () => {
-    const draft: MonthDraft = { timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 }, job: null, businesses: [makeBusinessDraft()] };
-    const actions = buildMonthActions(draft, null);
-    const decisions = actions.businessActions[0]!.decisions;
-    if (decisions?.family !== "service") throw new Error("devrait rester 'service'");
-    expect(decisions.price).toBe(0);
-  });
-
-  it("deux offres lancées -> la première par ordre de création détermine le prix", () => {
-    let state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [SERVICE_MARKET]);
-    const firstId = "svc-1-offer-first";
-    const secondId = "svc-1-offer-second";
-    const createDraft: MonthDraft = {
-      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
-      job: null,
-      businesses: [
-        makeBusinessDraft({
-          offerActions: [
-            { kind: "create", spec: { id: firstId, name: "Première offre", businessModel: "service-hours", positioning: "standard", targetSegment: "A", price: 10 } },
-            { kind: "launch", offerId: firstId },
-            { kind: "create", spec: { id: secondId, name: "Seconde offre", businessModel: "service-hours", positioning: "standard", targetSegment: "B", price: 999 } },
-            { kind: "launch", offerId: secondId },
-          ],
-        }),
-      ],
-    };
-    state = simulateMonth(state, buildMonthActions(createDraft), SEED);
-    const nextDraft = deriveNextDraft(createDraft, state);
-
-    const actions = buildMonthActions(nextDraft, state);
-    const decisions = actions.businessActions[0]!.decisions;
-    if (decisions?.family !== "service") throw new Error("devrait rester 'service'");
-    expect(decisions.price).toBe(10);
-  });
-
+describe("draft — offres (spec M11.2.2 §9 : le prix vient uniquement de l'offre, jamais de decisions)", () => {
   it("les offerActions du brouillon sont incluses dans la BusinessAction construite", () => {
     const draft: MonthDraft = {
       timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
