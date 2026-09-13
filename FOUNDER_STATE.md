@@ -10,10 +10,10 @@ aveuglément.
 Branche : `claude/founder-web-game-4v4xga` (branche de développement
 désignée pour cette session — voir note ci-dessous).
 Dernier commit vérifié au moment de la rédaction de cette version :
-`0ffc1ae` — M11.2.6.1 (Market Study, première tranche de M11.2.6)
-livré et vert. **M11.2.4 — Strategic Accounts (5/5 sous-jalons) ET
-M11.2.5 — Competitive Market sont terminés. M11.2.6 — Market
-Intelligence & UX est en cours (1/3 sous-tranches livrée).**
+`092d21d` — M11.2.6.2 (Segment Demand, 2e tranche de M11.2.6) livré et
+vert. **M11.2.4 — Strategic Accounts (5/5 sous-jalons) ET M11.2.5 —
+Competitive Market sont terminés. M11.2.6 — Market Intelligence & UX
+est en cours (2/3 sous-tranches livrées).**
 
 **Note d'infrastructure** : cette session développe sur la branche
 `claude/founder-web-game-4v4xga` (imposée par l'environnement
@@ -33,9 +33,9 @@ produit issue #1).**
 sous-tranches (décision autonome, voir spec M11.2.6.1) :
 1. ✅ M11.2.6.1 — Market Study (câblage `projectMarketView`, écran
    "Étude de marché").
-2. ⬜ M11.2.6.2 — demande par segment agrégée au niveau marché (spec à
-   écrire : nécessite une nouvelle agrégation moteur, pas une pure
-   restitution).
+2. ✅ M11.2.6.2 — Segment Demand (`computeSegmentAvailability`, nouvelle
+   agrégation moteur indépendante de toute offre, section "Segments de
+   clientèle").
 3. ⬜ M11.2.6.3 — satisfaction agrégée + "tableau de bord commercial"
    multi-entreprises.
 
@@ -490,6 +490,49 @@ causant une erreur "multiple elements" dans le test RTL) — corrigé en
 retirant le préfixe de la fonction de label (valeur seule : "Faible"/
 "Modérée"/"Élevée").
 
+## M11.2.6.2 — récapitulatif de livraison (Segment Demand, 2e tranche de M11.2.6)
+
+Spec : `docs/superpowers/specs/2026-09-13-founder-m11.2.6.2-segment-demand-design.md`.
+Contrairement à M11.2.6.1 (pure restitution), cette tranche nécessitait
+une VRAIE nouvelle agrégation moteur. 3 tâches TDD livrées, chacune
+commit+push séparément :
+
+1. `851acdc` — `computeSegmentAvailability` (`engine/market/demand.ts`) :
+   taille adressable de chaque segment d'un marché, INDÉPENDANTE de
+   toute offre — comble un manque réel (le joueur n'avait jusqu'ici
+   aucune visibilité sur la taille des segments avant de lancer une
+   offre). Reprend délibérément le sous-calcul `marketReferencePrice`/
+   `segmentAvailable` de `computeOfferDemand` à `monthsActive=0`
+   (`CustomerSegment.structuralTrend` est défini "par mois d'ancienneté
+   de l'**offre**", une notion qui n'existe pas en amont d'une offre) —
+   **`computeOfferDemand` non modifié**, formule dupliquée
+   volontairement, vérifiée par un test de cohérence croisée (la somme
+   des disponibilités par segment égale l'`availableMarket` agrégé de
+   `computeOfferDemand` à ancienneté nulle).
+2. `2b419e3` — `projectSegmentAvailabilityView` (`intelligence.ts`) :
+   même patron que `projectCompetitorView`/`projectMarketView`
+   (`estimate()`, bruit jamais nul), segment jamais bruité.
+3. `092d21d` — section "Segments de clientèle" dans l'écran "Étude de
+   marché" : une ligne par segment réel, fourchette bruitée
+   (`formatEstimateRange`, `demandUnitLabel` déjà existants).
+4. Vérification finale (ce commit) : 661 tests engine + 131 tests web
+   verts, `typecheck`/`typecheck:test`/`lint`/`build` propres des deux
+   côtés. `computeOfferDemand`/`businessResolution.ts` confirmés
+   **intégralement inchangés** sur tout M11.2.6 (`git diff
+   91b60ef..HEAD` sur ces fichiers : zéro ligne supprimée/modifiée).
+   Playtest mobile réel (390×844) : les 4 segments réels du marché
+   agency (TPE/indépendants, PME en croissance, Entreprises établies,
+   Grands comptes ponctuels) affichés avec des fourchettes plausibles
+   en unité native ("mandats"), aucune erreur console, aucun
+   débordement horizontal.
+
+**Aucun bug trouvé** — chaque fonction et son test sont passés du
+premier coup à l'exécution (30/30, 16/16, 4/4 selon les tâches). La
+seule vigilance a été de vérifier a priori (avant d'écrire du code) que
+`monthsActive=0` était bien un choix technique neutre et non un choix
+produit déguisé — confirmé par l'inspection du commentaire de
+`CustomerSegment.structuralTrend` dans le type lui-même.
+
 ## Design actif
 
 `docs/superpowers/specs/2026-09-12-founder-m11.2.4-strategic-accounts-design.md`
@@ -544,32 +587,31 @@ retirant le préfixe de la fonction de label (valeur seule : "Faible"/
 
 ## Prochaine action autonome
 
-**M11.2.6 — Market Intelligence & UX est en cours (1/3 sous-tranches
-livrée, M11.2.6.1 — Market Study).** Démarrer **M11.2.6.2 — demande par
-segment agrégée au niveau marché** en suivant le cycle standard
-(`CLAUDE.md`) :
+**M11.2.6 — Market Intelligence & UX est en cours (2/3 sous-tranches
+livrées : M11.2.6.1 — Market Study, M11.2.6.2 — Segment Demand).**
+Démarrer **M11.2.6.3 — satisfaction agrégée + tableau de bord
+commercial** en suivant le cycle standard (`CLAUDE.md`) :
 
-- Contrairement à M11.2.6.1 (pure restitution), cette sous-tranche
-  nécessite une VRAIE nouvelle agrégation moteur — l'architecture §8 le
-  dit explicitement ("demande par segment" fait partie des "nouvelles
-  entités M11.2.2-M11.2.5" à couvrir). Inspecter d'abord ce qui existe
-  déjà : `SegmentDemandContribution`/`DemandFunnelResult.bySegment`
-  (`types/demand.ts`) est calculé PAR OFFRE (via `computeOfferDemand`),
-  pas agrégé au niveau d'un marché entier (toutes offres/entreprises
-  confondues, y compris celles que le joueur n'opère pas). Déterminer
-  si "demande par segment" au niveau marché doit être une vraie nouvelle
-  fonction d'agrégation (somme des `bySegment` de toutes les offres du
-  joueur sur ce marché — simple, additif) ou quelque chose de plus
-  ambitieux (demande totale du marché entier, y compris la part captée
-  par la concurrence — nécessiterait de nouvelles hypothèses). Écrire
-  une spec dédiée (`docs/superpowers/specs/`) avant tout code : cette
-  sous-tranche a plus de marge d'ambiguïté que M11.2.6.1, vérifier
-  réellement les 8 triggers plutôt que de supposer qu'aucun ne
-  s'applique.
-- Une fois M11.2.6.2 livré, enchaîner sur **M11.2.6.3 — satisfaction
-  agrégée + tableau de bord commercial** puis, M11.2.6 entièrement
-  terminé, sur **M11.3 — Sales & Marketing** (`FOUNDER_ROADMAP.md`,
-  section "Ensuite") — sans demander de confirmation entre chaque
+- Comme M11.2.6.2, cette sous-tranche mêle vraisemblablement restitution
+  ET nouvelle agrégation. Inspecter d'abord ce qui existe déjà côté
+  satisfaction : `SATISFACTION_EWMA_ALPHA`/`bucketSatisfactionLevel`
+  (`engine/customer/retention.ts`), `reputationScore` par entreprise
+  (`BusinessFamilyState`), `AccountRelationshipState.satisfaction`
+  (comptes stratégiques, M11.2.4.4) — déterminer si "satisfaction
+  agrégée" désigne une moyenne pondérée par entreprise (déjà
+  disponible via `reputationScore`, quasi pure restitution) ou une vraie
+  nouvelle agrégation multi-segments/multi-offres (plus proche de
+  l'effort M11.2.6.2). Le "tableau de bord commercial" laisse aussi
+  ouverte la question du périmètre : par entreprise (déjà largement
+  couvert par `BusinessScreen`/`FinancesScreen`) ou consolidé
+  multi-entreprises (nouveau, le portefeuille `PortfolioScreen` existe
+  déjà comme point d'ancrage possible). Écrire une spec dédiée
+  (`docs/superpowers/specs/`) avant tout code, avec une vraie
+  auto-revue des 8 triggers plutôt qu'une supposition par analogie.
+- Une fois M11.2.6.3 livré, M11.2.6 entièrement terminé (mettre à jour
+  `FOUNDER_ROADMAP.md` en conséquence, section Terminé), enchaîner sur
+  **M11.3 — Sales & Marketing** (`FOUNDER_ROADMAP.md`, section
+  "Ensuite") — sans demander de confirmation entre chaque
   sous-tranche/milestone, sauf si un cas `PRODUCT DECISION REQUIRED`
   réel (`CLAUDE.md`) est rencontré.
 
