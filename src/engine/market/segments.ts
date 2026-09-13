@@ -56,6 +56,7 @@ const SEGMENTS_BY_FAMILY: Readonly<Record<EconomicFamily, readonly CustomerSegme
       trustImportance: 0.8,
       structuralTrend: 0.0015,
       seasonality: FLAT,
+      strategicAccountsEligible: true,
     },
     {
       id: "service-copropriétés",
@@ -118,6 +119,7 @@ const SEGMENTS_BY_FAMILY: Readonly<Record<EconomicFamily, readonly CustomerSegme
       trustImportance: 0.75,
       structuralTrend: 0.0008,
       seasonality: YEAR_END_PEAK,
+      strategicAccountsEligible: true,
     },
   ],
   retail: [
@@ -156,6 +158,7 @@ const SEGMENTS_BY_FAMILY: Readonly<Record<EconomicFamily, readonly CustomerSegme
       trustImportance: 0.65,
       structuralTrend: 0.0007,
       seasonality: YEAR_END_PEAK,
+      strategicAccountsEligible: true,
     },
     {
       id: "retail-achats-impulsifs",
@@ -218,6 +221,7 @@ const SEGMENTS_BY_FAMILY: Readonly<Record<EconomicFamily, readonly CustomerSegme
       trustImportance: 0.85,
       structuralTrend: 0.0003,
       seasonality: YEAR_END_PEAK,
+      strategicAccountsEligible: true,
     },
   ],
   subscription: [
@@ -257,6 +261,7 @@ const SEGMENTS_BY_FAMILY: Readonly<Record<EconomicFamily, readonly CustomerSegme
       structuralTrend: 0.0012,
       // Cycles budgétaires annuels : renouvellements/nouveaux contrats en fin d'année.
       seasonality: YEAR_END_PEAK,
+      strategicAccountsEligible: true,
     },
     {
       id: "subscription-early-adopters",

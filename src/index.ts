@@ -156,6 +156,13 @@ export {
 
 export type { CustomerSegment } from "./types/customerSegment.js";
 export type {
+  AccountOfferRelationship,
+  StrategicAccount,
+  StrategicAccountOpportunity,
+  StrategicAccountOpportunitySource,
+  StrategicAccountOpportunityStatus,
+} from "./types/strategicAccount.js";
+export type {
   DemandFunnelResult,
   DemandSignal,
   FitBreakdown,

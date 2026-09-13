@@ -30,4 +30,13 @@ export interface CustomerSegment {
   readonly structuralTrend: number;
   /** 12 multiplicateurs saisonniers, centrés sur 1 (index 0 = janvier). */
   readonly seasonality: readonly number[];
+  /**
+   * Ce segment peut-il porter des Strategic Accounts (spec M11.2.4 §4) ?
+   * Propriété EXPLICITE du catalogue, jamais déduite implicitement des
+   * autres coefficients (`referencePrice`/`trustImportance` élevés ne
+   * suffisent pas à eux seuls) — un café B2C pur ne doit pas recevoir
+   * artificiellement des grands comptes. `undefined`/`false` = non
+   * éligible.
+   */
+  readonly strategicAccountsEligible?: boolean;
 }

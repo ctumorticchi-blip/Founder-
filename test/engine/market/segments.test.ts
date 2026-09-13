@@ -59,3 +59,21 @@ describe("getMarketSegments (spec M11.2.2 §2)", () => {
     }
   });
 });
+
+describe("strategicAccountsEligible (spec M11.2.4.1 §4, §19.7)", () => {
+  it("exactement un segment par famille est marqué éligible en V1", () => {
+    for (const family of ECONOMIC_FAMILIES) {
+      const eligible = getMarketSegments(family).filter((s) => s.strategicAccountsEligible === true);
+      expect(eligible).toHaveLength(1);
+    }
+  });
+
+  it("aucun segment non marqué n'est éligible par défaut (undefined, jamais une absence traitée comme true)", () => {
+    for (const family of ECONOMIC_FAMILIES) {
+      const nonEligible = getMarketSegments(family).filter((s) => s.strategicAccountsEligible !== true);
+      for (const segment of nonEligible) {
+        expect(segment.strategicAccountsEligible === undefined || segment.strategicAccountsEligible === false).toBe(true);
+      }
+    }
+  });
+});
