@@ -22,20 +22,19 @@ mobile-first.
 - M11.2.4 — Strategic Accounts : spec de conception validée
   (`docs/superpowers/specs/2026-09-12-founder-m11.2.4-strategic-accounts-design.md`,
   corrigée au commit `58d080f`)
-- M11.2.4.1 — Strategic Account Core : plan d'implémentation validé
-  (`docs/superpowers/plans/2026-09-13-founder-m11.2.4.1-strategic-account-core.md`,
-  corrigé au commit `2e225a9`) — **implémentation en cours, voir
-  `FOUNDER_STATE.md` pour l'état exact.**
+- M11.2.4.1 — Strategic Account Core : implémenté et vérifié (7 tâches
+  TDD, suite complète verte, playtest mobile réel réussi). Voir
+  `FOUNDER_STATE.md` pour le détail.
+- M11.2.4.2 — Prospecting & Negotiation : implémenté et vérifié (6
+  tâches TDD, suite complète verte, négociation de bout en bout jouée
+  réellement en mobile : temps investi → proposition rejetée →
+  contre-proposition → acceptation → contrat signé). Voir
+  `FOUNDER_STATE.md` pour le détail.
 
 ## Actif — Strategic Accounts (M11.2.4)
 
-1. **M11.2.4.1 — Strategic Account Core** — identité + éligibilité par
-   (offre, segment) + apparition seedée d'opportunités + persistance +
-   écran consultatif. Aucun effet économique.
-2. **M11.2.4.2 — Prospecting & Negotiation** — temps fondateur par
-   opportunité, information imparfaite progressive, négociation
-   accept/counter/reject, contrat signé mais encore sans effet sur
-   `businessResolution.ts`.
+1. ~~**M11.2.4.1 — Strategic Account Core**~~ — terminé.
+2. ~~**M11.2.4.2 — Prospecting & Negotiation**~~ — terminé.
 3. **M11.2.4.3 — Contract Execution** — intégration réelle dans
    `computeTotalDemand`/l'allocation de capacité à 3 flux sans priorité
    cachée (patron déjà spécifié, spec §2-§3) — CA/coûts réels.
