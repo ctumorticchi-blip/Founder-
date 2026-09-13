@@ -15,6 +15,8 @@ export type Route =
   /** Fiche d'une offre existante — développement/lancement/amélioration (spec M11.2 §3.5). */
   | { readonly screen: "offer"; readonly businessId: string; readonly offerId: string }
   | { readonly screen: "finances"; readonly businessId?: string }
+  /** Liste consultative des opportunités de comptes stratégiques (spec M11.2.4.1 §13). */
+  | { readonly screen: "strategicAccounts"; readonly businessId: string }
   | { readonly screen: "news" };
 
 interface NavigationValue {
