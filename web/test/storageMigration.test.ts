@@ -652,4 +652,26 @@ describe("migrateSaveGame", () => {
     const migratedTwice = migrateSaveGame(migratedOnce);
     expect(migratedTwice).toEqual(migratedOnce);
   });
+
+  it("une sauvegarde antérieure à M11.2.5 (sans competitors) reçoit {}, jamais un concurrent fabriqué (spec M11.2.5 §4/§7)", () => {
+    const migrated = migrateSaveGame(LEGACY_M10_SAVE);
+    expect(migrated.gameState.competitors).toEqual({});
+  });
+
+  it("une sauvegarde portant déjà des concurrents identifiés les préserve telles quelles", () => {
+    const alreadyMigrated = migrateSaveGame(LEGACY_M10_SAVE);
+    const saveWithCompetitors = {
+      ...alreadyMigrated,
+      gameState: {
+        ...alreadyMigrated.gameState,
+        competitors: {
+          "market-1": [
+            { id: "market-1:competitor:0", name: "Ateliers Berthier", marketId: "market-1", tier: "identified" as const, strength: 0.6, qualityLevel: 0.4 },
+          ],
+        },
+      },
+    };
+    const migrated = migrateSaveGame(saveWithCompetitors);
+    expect(migrated.gameState.competitors).toEqual(saveWithCompetitors.gameState.competitors);
+  });
 });

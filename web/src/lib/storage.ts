@@ -209,6 +209,10 @@ export function migrateSaveGame(raw: unknown): SaveGameV1 {
 
   const gameState = {
     ...save.gameState,
+    // Concurrents identifiés (spec M11.2.5) — défaut neutre, jamais un
+    // concurrent fabriqué pour compenser une sauvegarde antérieure à ce
+    // milestone : le rattrapage réel se fait au prochain simulateMonth.
+    competitors: save.gameState.competitors ?? {},
     businesses: save.gameState.businesses.map((owned) => {
       const offers: readonly Offer[] = (
         owned.business.offers ?? [
