@@ -167,9 +167,21 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
       availableCharacterCash -= action.propertyPurchase.downPaymentFromPersonalCash;
     }
 
+    // Actions du joueur sur les opportunités EXISTANTES (investissement de
+    // temps, négociation) résolues AVANT le calcul économique du mois (spec
+    // M11.2.4.3 décision 6) : un contrat accepté CE mois-ci doit consommer
+    // de la capacité CE MÊME mois — même principe que applyOfferActions,
+    // déjà appliqué avant le calcul économique dans resolveBusinessMonth.
+    const opportunitiesAfterActions = applyStrategicAccountActions(
+      owned.strategicAccountOpportunities,
+      action.strategicAccountActions ?? [],
+      owned.familyState.family,
+      nextDate,
+    );
+
     const demandShare = availableDemandShare(competitions[owned.marketId]!);
     const resolved = resolveBusinessMonth(
-      owned,
+      { ...owned, strategicAccountOpportunities: opportunitiesAfterActions },
       action,
       demandShare,
       state.character.skills.leadership,
@@ -263,21 +275,16 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
         });
       }
       const finalSaleProcess = saleProcess?.status === "withdrawn" ? null : saleProcess;
-      // Actions du joueur (investissement de temps, négociation) sur les
-      // opportunités EXISTANTES, appliquées AVANT l'apparition de
-      // nouvelles opportunités ce mois-ci (même ordre que applyOfferActions
-      // avant le calcul économique, businessResolution.ts).
-      const opportunitiesAfterActions = applyStrategicAccountActions(
-        owned.strategicAccountOpportunities,
-        action.strategicAccountActions ?? [],
-        resolved.updated.familyState.family,
-        nextDate,
-      );
+      // Nouvelles arrivées APRÈS la résolution économique du mois (spec
+      // M11.2.4.3 décision 6) — sur `resolved.updated.strategicAccountOpportunities`,
+      // qui porte déjà les actions joueur résolues ET l'exécution
+      // contractuelle de ce mois-ci (lastMonthServedVolume/lastMonthUnservedVolume/
+      // monthsRemaining, businessResolution.ts).
       const strategicAccountOpportunities = advanceStrategicAccountOpportunities({
         businessId: owned.id,
         offers: resolved.updated.business.offers,
         family: resolved.updated.familyState.family,
-        existingOpportunities: opportunitiesAfterActions,
+        existingOpportunities: resolved.updated.strategicAccountOpportunities,
         rng: rng.fork(`business:${owned.id}:strategicAccounts`),
         date: nextDate,
       });

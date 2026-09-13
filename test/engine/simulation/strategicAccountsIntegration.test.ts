@@ -205,19 +205,42 @@ describe("Prospecting & Negotiation — intégration mensuelle (spec M11.2.4.2 �
     expect(state.businesses[0]!.strategicAccounts).toEqual([]); // toujours aucune conversion en compte confirmé
   });
 
-  it("signer un contrat n'a AUCUN effet sur lastStatement.revenue du même mois (spec §15 : contrat papier tant que M11.2.4.3 n'existe pas)", () => {
+  it("signer un contrat CE mois-ci consomme réellement de la capacité et génère du CA CE MÊME mois (spec M11.2.4.3 décision 6 : négociation résolue avant le calcul économique)", () => {
     const { state: initial, opportunityId } = advanceUntilFirstOpportunity(2);
     const budget = deriveTrueOpportunityBudget(opportunityId, AGENCY_GRANDS_COMPTES_REFERENCE_PRICE);
     const tooHigh: AccountProposal = { price: budget.maxAcceptablePrice * 2, volume: 10, qualityCommitment: 60, durationMonths: 6 };
     const negotiating = simulateMonth(initial, monthActions("conseil-1", true, [{ kind: "propose", opportunityId, proposal: tooHigh }]), 2);
 
     // Deux branches DEPUIS LE MÊME ÉTAT PRÉALABLE (negotiating), pour le même mois :
-    // l'une accepte le contrat, l'autre ne fait rien. Toute différence de revenu entre
-    // les deux prouverait un effet économique du contrat — interdit avant M11.2.4.3.
+    // l'une accepte le contrat, l'autre ne fait rien. La différence de revenu entre
+    // les deux PROUVE l'effet économique immédiat du contrat (spec M11.2.4.3, contrairement
+    // à M11.2.4.2 où un contrat signé restait "papier" jusqu'au mois suivant).
     const withAccept = simulateMonth(negotiating, monthActions("conseil-1", true, [{ kind: "accept", opportunityId }]), 2);
     const withoutAccept = simulateMonth(negotiating, monthActions("conseil-1", true, []), 2);
 
-    expect(withAccept.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!.status).toBe("won");
-    expect(withAccept.businesses[0]!.lastStatement!.revenue).toBe(withoutAccept.businesses[0]!.lastStatement!.revenue);
+    const wonOpportunity = withAccept.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!;
+    expect(wonOpportunity.status).toBe("won");
+    expect(wonOpportunity.contract!.lastMonthServedVolume).toBeGreaterThan(0);
+    expect(wonOpportunity.contract!.monthsRemaining).toBe(wonOpportunity.contract!.durationMonths - 1);
+    expect(withAccept.businesses[0]!.lastStatement!.revenue).not.toBe(withoutAccept.businesses[0]!.lastStatement!.revenue);
+  });
+
+  it("conservation de bout en bout via simulateMonth (spec M11.2.4.3 §2-§3) : ventes + non-servi (tous flux) = demande totale, aucune destruction/duplication", () => {
+    const { state: initial, opportunityId } = advanceUntilFirstOpportunity(2);
+    const budget = deriveTrueOpportunityBudget(opportunityId, AGENCY_GRANDS_COMPTES_REFERENCE_PRICE);
+    const tooHigh: AccountProposal = { price: budget.maxAcceptablePrice * 2, volume: 10, qualityCommitment: 60, durationMonths: 6 };
+    const negotiating = simulateMonth(initial, monthActions("conseil-1", true, [{ kind: "propose", opportunityId, proposal: tooHigh }]), 2);
+    const withAccept = simulateMonth(negotiating, monthActions("conseil-1", true, [{ kind: "accept", opportunityId }]), 2);
+
+    const business = withAccept.businesses[0]!;
+    const offer = business.business.offers.find((o) => o.id === business.strategicAccountOpportunities.find((op) => op.id === opportunityId)!.offerId)!;
+    const demand = offer.lastDemand!;
+    const contract = business.strategicAccountOpportunities.find((o) => o.id === opportunityId)!.contract!;
+
+    // Identité de conservation (spec §2-§3) : ventes totales + pertes totales = demande totale,
+    // qu'il y ait surcharge ou non — jamais de volume détruit ni dupliqué entre les 3 flux.
+    expect(demand.sales + demand.lostToCapacity).toBeCloseTo(demand.demand, 3);
+    // Le volume contractuel réellement servi/perdu somme exactement au volume du contrat.
+    expect(contract.lastMonthServedVolume + contract.lastMonthUnservedVolume).toBeCloseTo(contract.volume, 3);
   });
 });
