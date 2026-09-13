@@ -3,7 +3,7 @@ import type { CharacterState, TimeCategory } from "../../types/character.js";
 import type { BusinessState, MonthlyFinancialStatement } from "../../types/business.js";
 import type { WorkforceState } from "../../types/employees.js";
 import type { Market } from "../../types/market.js";
-import type { AggregateCompetition } from "../../types/competition.js";
+import type { AggregateCompetition, Competitor } from "../../types/competition.js";
 import type { MacroState } from "../../types/world.js";
 import type { GameEvent, MemoryEntry } from "../../types/narrative.js";
 import type { PropertyPurchaseSpec } from "../../types/realEstate.js";
@@ -203,6 +203,8 @@ export interface GameState {
   readonly macro: MacroState;
   readonly markets: Readonly<Record<string, Market>>;
   readonly competitions: Readonly<Record<string, AggregateCompetition>>;
+  /** Concurrents identifiés par marché (spec M11.2.5) — décomposition additive de `competitions`, jamais utilisée par le calcul de demande. */
+  readonly competitors: Readonly<Record<string, readonly Competitor[]>>;
   readonly character: CharacterState;
   readonly job: { readonly hourlyWage: number } | null;
   /** Portefeuille d'entreprises du joueur (spec §3 : plus limité à une seule). */

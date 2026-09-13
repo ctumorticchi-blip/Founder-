@@ -49,6 +49,17 @@ describe("createInitialGameState", () => {
     expect(Object.keys(state.competitions).sort()).toEqual(["nettoyage-local", "saas-niche"]);
   });
 
+  it("crée des concurrents identifiés pour chaque marché (spec M11.2.5 §2-§3)", () => {
+    const state = createInitialGameState(7, BIRTH_DATE, START_DATE, [SERVICE_MARKET, SUBSCRIPTION_MARKET]);
+    expect(Object.keys(state.competitors).sort()).toEqual(["nettoyage-local", "saas-niche"]);
+    for (const marketId of Object.keys(state.competitors)) {
+      expect(state.competitors[marketId]!.length).toBeGreaterThan(0);
+      for (const competitor of state.competitors[marketId]!) {
+        expect(competitor.marketId).toBe(marketId);
+      }
+    }
+  });
+
   it("rejette une liste de marchés vide", () => {
     expect(() => createInitialGameState(1, BIRTH_DATE, START_DATE, [])).toThrow(RangeError);
   });

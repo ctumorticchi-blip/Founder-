@@ -90,6 +90,26 @@ describe("simulateMonth", () => {
     expect(month2.events.some((e) => e.kind === "job-started")).toBe(false);
   });
 
+  it("fait évoluer les concurrents identifiés existants (spec M11.2.5)", () => {
+    const state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [MARKET]);
+    const before = state.competitors[MARKET.id]!;
+    expect(before.length).toBeGreaterThan(0);
+    const next = simulateMonth(state, JOB_ONLY_ACTIONS, SEED);
+    const after = next.competitors[MARKET.id]!;
+    expect(after).toHaveLength(before.length);
+    for (let i = 0; i < before.length; i++) {
+      expect(after[i]!.id).toBe(before[i]!.id);
+      expect(after[i]!.name).toBe(before[i]!.name);
+    }
+  });
+
+  it("génère des concurrents identifiés (backfill) pour un marché sans aucun concurrent (sauvegarde migrée, spec M11.2.5 §4)", () => {
+    const state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [MARKET]);
+    const migratedState = { ...state, competitors: {} };
+    const next = simulateMonth(migratedState, JOB_ONLY_ACTIONS, SEED);
+    expect(next.competitors[MARKET.id]!.length).toBeGreaterThan(0);
+  });
+
   it("rejette une allocation de temps invalide (budget dépassé)", () => {
     const state = createInitialGameState(SEED, BIRTH_DATE, START_DATE, [MARKET]);
     const badActions: MonthActions = {

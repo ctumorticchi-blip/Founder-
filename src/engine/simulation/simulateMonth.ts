@@ -3,6 +3,7 @@ import { addMonths, toMonthIndex } from "../time/clock.js";
 import { advanceMacro } from "../world/world.js";
 import { advanceMarket, detectMarketInefficiency } from "../market/market.js";
 import { advanceAggregateCompetition, availableDemandShare } from "../competition/competition.js";
+import { advanceIdentifiedCompetitors, createIdentifiedCompetitors } from "../competition/identifiedCompetitors.js";
 import { allocateTime, applySkillGain } from "../character/character.js";
 import { TIME_CATEGORIES, type SkillName, type TimeCategory } from "../../types/character.js";
 import { INSOLVENCY_THRESHOLD_MONTHS } from "../business/treasury.js";
@@ -13,7 +14,7 @@ import { appendToMemory } from "../narrative/narrative.js";
 import { createOwnedBusiness, resolveBusinessMonth } from "./businessResolution.js";
 import type { GameEvent } from "../../types/narrative.js";
 import type { Market } from "../../types/market.js";
-import type { AggregateCompetition } from "../../types/competition.js";
+import type { AggregateCompetition, Competitor } from "../../types/competition.js";
 import type { SaleProcessState } from "../../types/sale.js";
 import type { GameState, MonthActions, OwnedBusiness } from "./types.js";
 
@@ -130,6 +131,20 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
   const competitions: Record<string, AggregateCompetition> = {};
   for (const [marketId, competition] of Object.entries(state.competitions)) {
     competitions[marketId] = advanceAggregateCompetition(competition, markets[marketId]!, rng.fork(`competition:${marketId}`));
+  }
+
+  // 3b. concurrents identifiés (spec M11.2.5, décomposition additive de la
+  // concurrence agrégée ci-dessus — jamais utilisée par le calcul de demande).
+  // Une sauvegarde migrée sans concurrents encore générés pour un marché en
+  // reçoit ici : première apparition réelle dans CETTE partie, pas une
+  // reconstitution de passé (spec §4).
+  const competitors: Record<string, readonly Competitor[]> = {};
+  for (const marketId of Object.keys(state.markets)) {
+    const existing = state.competitors[marketId] ?? [];
+    competitors[marketId] =
+      existing.length > 0
+        ? advanceIdentifiedCompetitors(existing, competitions[marketId]!, rng.fork(`competitors:${marketId}`))
+        : createIdentifiedCompetitors(marketId, competitions[marketId]!, rng.fork(`competitors:backfill:${marketId}`));
   }
 
   // 4. demande + 5. ventes + 6. opérations + 7. employés + 8. comptabilité + 9. cash
@@ -372,6 +387,7 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
     macro,
     markets,
     competitions,
+    competitors,
     character,
     job,
     businesses,

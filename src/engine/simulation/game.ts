@@ -2,8 +2,10 @@ import { createRng } from "../rng/rng.js";
 import type { GameDate } from "../time/clock.js";
 import { createInitialMacroState } from "../world/world.js";
 import { createAggregateCompetition } from "../competition/competition.js";
+import { createIdentifiedCompetitors } from "../competition/identifiedCompetitors.js";
 import { createInitialCharacter } from "../character/character.js";
 import type { Market } from "../../types/market.js";
+import type { Competitor } from "../../types/competition.js";
 import type { GameState } from "./types.js";
 
 /**
@@ -29,9 +31,15 @@ export function createInitialGameState(
   const rng = createRng(seed);
   const marketsById: Record<string, Market> = {};
   const competitionsById: Record<string, ReturnType<typeof createAggregateCompetition>> = {};
+  const competitorsById: Record<string, readonly Competitor[]> = {};
   for (const market of markets) {
     marketsById[market.id] = market;
     competitionsById[market.id] = createAggregateCompetition(market.id, rng.fork(`competition:init:${market.id}`));
+    competitorsById[market.id] = createIdentifiedCompetitors(
+      market.id,
+      competitionsById[market.id]!,
+      rng.fork(`competitors:init:${market.id}`),
+    );
   }
 
   return {
@@ -39,6 +47,7 @@ export function createInitialGameState(
     macro: createInitialMacroState(startDate),
     markets: marketsById,
     competitions: competitionsById,
+    competitors: competitorsById,
     character: createInitialCharacter(rng.fork("character:init"), birthDate),
     job: null,
     businesses: [],
