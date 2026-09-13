@@ -162,6 +162,15 @@ export type {
   StrategicAccountOpportunitySource,
   StrategicAccountOpportunityStatus,
 } from "./types/strategicAccount.js";
+export type { StrategicAccountIdentity } from "./engine/business/strategicAccountIdentity.js";
+export { generateStrategicAccountIdentity } from "./engine/business/strategicAccountIdentity.js";
+export {
+  MAX_ACTIVE_STRATEGIC_ACCOUNT_OPPORTUNITIES_PER_BUSINESS,
+  STRATEGIC_ACCOUNT_OPPORTUNITY_MONTHLY_PROBABILITY,
+  advanceStrategicAccountOpportunities,
+  findEligibleStrategicAccountSlots,
+  type StrategicAccountSlot,
+} from "./engine/business/strategicAccounts.js";
 export type {
   DemandFunnelResult,
   DemandSignal,
