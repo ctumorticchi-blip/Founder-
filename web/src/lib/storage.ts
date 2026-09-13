@@ -1,12 +1,15 @@
 import {
   INITIAL_QUALITY_LEVEL,
   INITIAL_REPUTATION_SCORE,
+  computeBudgetEstimate,
+  getMarketSegments,
   type BusinessFamilyState,
   type EconomicFamily,
   type GameDate,
   type Offer,
   type OfferBusinessModel,
   type SegmentCustomerMemory,
+  type StrategicAccountOpportunity,
 } from "@founder/engine";
 import { findOpportunity } from "../data/opportunities";
 import { defaultBusinessIdentity } from "../state/businessIdentity";
@@ -123,6 +126,30 @@ function migrateSegmentCustomerMemory(memory: SegmentCustomerMemory): SegmentCus
   };
 }
 
+/**
+ * Complète une opportunité de compte stratégique antérieure à M11.2.4.2
+ * avec les 4 champs de négociation (spec M11.2.4.2 §14) — jamais un
+ * historique de négociation fabriqué : `researchHoursInvested: 0`
+ * signifie "aucune recherche encore investie", `lastAccountProposal`/
+ * `contract: null` signifient "aucune négociation en cours/aboutie",
+ * cohérents avec l'état initial produit par le moteur pour une
+ * opportunité neuve. `budgetEstimate` est recalculé (jamais persisté
+ * comme une vérité figée) via `computeBudgetEstimate`, la même fonction
+ * pure que le moteur utilise à la création — aucune valeur inventée hors
+ * du catalogue réel de segments.
+ */
+function migrateStrategicAccountOpportunity(opportunity: StrategicAccountOpportunity, family: EconomicFamily): StrategicAccountOpportunity {
+  const researchHoursInvested = opportunity.researchHoursInvested ?? 0;
+  const referencePrice = getMarketSegments(family).find((segment) => segment.id === opportunity.segmentId)?.referencePrice ?? 0;
+  return {
+    ...opportunity,
+    researchHoursInvested,
+    lastAccountProposal: opportunity.lastAccountProposal ?? null,
+    contract: opportunity.contract ?? null,
+    budgetEstimate: opportunity.budgetEstimate ?? computeBudgetEstimate(opportunity.id, referencePrice, researchHoursInvested),
+  };
+}
+
 const STORAGE_KEY = "founder.save.v1";
 
 /**
@@ -179,7 +206,9 @@ export function migrateSaveGame(raw: unknown): SaveGameV1 {
         familyState: migrateFamilyState(owned.familyState),
         saleProcess: owned.saleProcess ?? null,
         strategicAccounts: owned.strategicAccounts ?? [],
-        strategicAccountOpportunities: owned.strategicAccountOpportunities ?? [],
+        strategicAccountOpportunities: (owned.strategicAccountOpportunities ?? []).map((opportunity) =>
+          migrateStrategicAccountOpportunity(opportunity, owned.familyState.family as EconomicFamily),
+        ),
       };
     }),
   };

@@ -431,8 +431,84 @@ describe("migrateSaveGame", () => {
       },
     };
     const remigrated = migrateSaveGame(withOpportunity);
-    expect(remigrated.gameState.businesses[0]!.strategicAccountOpportunities).toEqual(
-      withOpportunity.gameState.businesses[0]!.strategicAccountOpportunities,
-    );
+    const migratedOpportunity = remigrated.gameState.businesses[0]!.strategicAccountOpportunities[0]!;
+    const original = withOpportunity.gameState.businesses[0]!.strategicAccountOpportunities[0]!;
+    // Les champs d'identité M11.2.4.1 sont préservés tels quels — seuls les
+    // 4 nouveaux champs M11.2.4.2 (absents de ce fixture antérieur) sont
+    // complétés par la migration (voir tests dédiés ci-dessous).
+    expect(migratedOpportunity.id).toBe(original.id);
+    expect(migratedOpportunity.companyName).toBe(original.companyName);
+    expect(migratedOpportunity.status).toBe(original.status);
+  });
+
+  it("une opportunité M11.2.4.1 (sans researchHoursInvested/budgetEstimate/lastAccountProposal/contract) est complétée sans fabriquer d'historique de négociation (spec M11.2.4.2 §14)", () => {
+    const alreadyMigrated = migrateSaveGame(LEGACY_M10_SAVE);
+    const legacyOpportunitySave = {
+      ...alreadyMigrated,
+      gameState: {
+        ...alreadyMigrated.gameState,
+        businesses: [
+          {
+            ...alreadyMigrated.gameState.businesses[0]!,
+            familyState: { family: "service" as const, reputationScore: 0.5, costPerLaborHour: 8 },
+            strategicAccountOpportunities: [
+              {
+                id: "biz-1:offer-1:service-entreprises-exigeantes:24305",
+                businessId: "service-abc123",
+                offerId: "offer-1",
+                segmentId: "service-entreprises-exigeantes",
+                companyName: "Groupe Meridien",
+                contactName: "Camille Marchand",
+                contactRole: "Directrice générale",
+                source: "network",
+                discoveredAt: { year: 2025, month: 6 },
+                status: "researching",
+                // researchHoursInvested/budgetEstimate/lastAccountProposal/contract absents : sauvegarde M11.2.4.1.
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const migrated = migrateSaveGame(legacyOpportunitySave);
+    const opportunity = migrated.gameState.businesses[0]!.strategicAccountOpportunities[0]!;
+    expect(opportunity.researchHoursInvested).toBe(0);
+    expect(opportunity.lastAccountProposal).toBeNull();
+    expect(opportunity.contract).toBeNull();
+    expect(opportunity.budgetEstimate.price.value).toBeGreaterThan(0);
+    expect(opportunity.budgetEstimate.price.uncertainty).toBeGreaterThan(0);
+  });
+
+  it("la migration M11.2.4.2 est idempotente (researchHoursInvested/budgetEstimate stables sur double passage)", () => {
+    const alreadyMigrated = migrateSaveGame(LEGACY_M10_SAVE);
+    const legacyOpportunitySave = {
+      ...alreadyMigrated,
+      gameState: {
+        ...alreadyMigrated.gameState,
+        businesses: [
+          {
+            ...alreadyMigrated.gameState.businesses[0]!,
+            familyState: { family: "service" as const, reputationScore: 0.5, costPerLaborHour: 8 },
+            strategicAccountOpportunities: [
+              {
+                id: "biz-1:offer-1:service-entreprises-exigeantes:24305",
+                businessId: "service-abc123",
+                offerId: "offer-1",
+                segmentId: "service-entreprises-exigeantes",
+                companyName: "Groupe Meridien",
+                contactName: "Camille Marchand",
+                contactRole: "Directrice générale",
+                source: "network",
+                discoveredAt: { year: 2025, month: 6 },
+                status: "researching",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const migratedOnce = migrateSaveGame(legacyOpportunitySave);
+    const migratedTwice = migrateSaveGame(migratedOnce);
+    expect(migratedTwice).toEqual(migratedOnce);
   });
 });
