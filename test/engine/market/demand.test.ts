@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeOfferDemand, computeSegmentFit } from "../../../src/engine/market/demand.js";
+import { computeOfferDemand, computeSegmentAvailability, computeSegmentFit } from "../../../src/engine/market/demand.js";
 import { getMarketSegments } from "../../../src/engine/market/segments.js";
 import type { CustomerSegment } from "../../../src/types/customerSegment.js";
 import type { Market } from "../../../src/types/market.js";
@@ -248,5 +248,65 @@ describe("computeOfferDemand (spec M11.2.2 §4-§7)", () => {
     });
     expect(withWom.reached).toBeGreaterThan(withoutWom.reached);
     expect(withWom.demand).toBeGreaterThan(withoutWom.demand);
+  });
+});
+
+describe("computeSegmentAvailability (spec M11.2.6.2 §2)", () => {
+  const segments = getMarketSegments("service");
+
+  it("une entrée par segment fourni, availableMarket >= 0", () => {
+    const result = computeSegmentAvailability(MARKET, segments, DATE);
+    expect(result).toHaveLength(segments.length);
+    for (const entry of result) {
+      expect(entry.availableMarket).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("est déterministe et pure (aucun aléa, même entrée -> même sortie)", () => {
+    const a = computeSegmentAvailability(MARKET, segments, DATE);
+    const b = computeSegmentAvailability(MARKET, segments, DATE);
+    expect(a).toEqual(b);
+  });
+
+  it("la somme des disponibilités par segment égale l'availableMarket agrégé de computeOfferDemand à ancienneté d'offre nulle (cohérence croisée, aucune formule dupliquée qui diverge)", () => {
+    const offerCreatedNow = offer({ createdAt: DATE });
+    const fromOfferDemand = computeOfferDemand(offerCreatedNow, MARKET, segments, {
+      demandShare: 1,
+      reputationScore: 0.5,
+      prospectionHours: 40,
+      date: DATE,
+    });
+    const fromSegmentAvailability = computeSegmentAvailability(MARKET, segments, DATE).reduce(
+      (sum, entry) => sum + entry.availableMarket,
+      0,
+    );
+    expect(fromSegmentAvailability).toBeCloseTo(fromOfferDemand.availableMarket, 6);
+  });
+
+  it("une taille de segment plus grande produit une disponibilité proportionnellement plus grande", () => {
+    const small = computeSegmentAvailability(MARKET, [segment({ relativeSize: 0.2 })], DATE)[0]!;
+    const large = computeSegmentAvailability(MARKET, [segment({ relativeSize: 0.8 })], DATE)[0]!;
+    expect(large.availableMarket).toBeGreaterThan(small.availableMarket);
+  });
+
+  it("la saisonnalité fait varier la disponibilité d'un mois à l'autre pour un segment saisonnier", () => {
+    const seasonalSegment = segments.find((s) => new Set(s.seasonality).size > 1)!;
+    const [lowMonthIndex] = seasonalSegment.seasonality.map((v, i) => [i, v] as const).sort((a, b) => a[1] - b[1])[0]!;
+    const [highMonthIndex] = seasonalSegment.seasonality.map((v, i) => [i, v] as const).sort((a, b) => b[1] - a[1])[0]!;
+    const low = computeSegmentAvailability(MARKET, [seasonalSegment], { year: 2026, month: lowMonthIndex + 1 })[0]!;
+    const high = computeSegmentAvailability(MARKET, [seasonalSegment], { year: 2026, month: highMonthIndex + 1 })[0]!;
+    expect(high.availableMarket).toBeGreaterThan(low.availableMarket);
+  });
+
+  it("ne dépend d'aucune ancienneté d'offre (aucune notion d'offre en entrée)", () => {
+    // Contrairement à computeOfferDemand, computeSegmentAvailability n'accepte
+    // aucun Offer — vérifié structurellement par la signature elle-même
+    // (TypeScript refuserait tout appel avec un 4e argument Offer).
+    const result = computeSegmentAvailability(MARKET, segments, DATE);
+    expect(result.map((r) => r.segmentId)).toEqual(segments.map((s) => s.id));
+  });
+
+  it("un marché vide de segments ne lève pas et renvoie un tableau vide", () => {
+    expect(computeSegmentAvailability(MARKET, [], DATE)).toEqual([]);
   });
 });

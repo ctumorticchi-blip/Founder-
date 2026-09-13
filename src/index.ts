@@ -225,11 +225,17 @@ export type {
   DemandSignal,
   FitBreakdown,
   PriceSignal,
+  SegmentAvailability,
   SegmentDemandContribution,
   VisibilityLevel,
 } from "./types/demand.js";
 export { getMarketSegments } from "./engine/market/segments.js";
-export { computeOfferDemand, computeSegmentFit, type ComputeOfferDemandParams } from "./engine/market/demand.js";
+export {
+  computeOfferDemand,
+  computeSegmentAvailability,
+  computeSegmentFit,
+  type ComputeOfferDemandParams,
+} from "./engine/market/demand.js";
 
 export type {
   FidelityTrend,

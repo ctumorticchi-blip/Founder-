@@ -5,6 +5,7 @@ import type {
   DemandSignal,
   FitBreakdown,
   PriceSignal,
+  SegmentAvailability,
   SegmentDemandContribution,
   VisibilityLevel,
 } from "../../types/demand.js";
@@ -238,4 +239,47 @@ export function computeOfferDemand(
     demandSignal: bucketDemandSignal(demand, availableMarket),
     bySegment,
   };
+}
+
+/**
+ * Taille adressable de chaque segment d'un marché, INDÉPENDANTE de toute
+ * offre (spec M11.2.6.2 §0-§2) — utile pour une étude de marché en amont
+ * d'une décision de lancement, contrairement à `SegmentDemandContribution`
+ * (`computeOfferDemand`) qui suppose une offre déjà construite.
+ *
+ * Reprend délibérément le sous-calcul `marketReferencePrice`/
+ * `segmentAvailable` de `computeOfferDemand` (prix de référence pondéré
+ * par la taille des segments, taille effective × saisonnalité) SANS
+ * modifier `computeOfferDemand` lui-même (invariant "zéro ligne touchée"
+ * déjà vérifié à plusieurs reprises cette session) — un test de cohérence
+ * croisée dédié détecte toute divergence future entre les deux formules.
+ * `effectiveRelativeSize` utilise `monthsActive = 0` (aucune dérive
+ * structurelle appliquée) : `CustomerSegment.structuralTrend` est défini
+ * "par mois d'ancienneté de l'offre" (commentaire du type), une notion
+ * qui n'existe pas encore ici — 0 représente "la taille de ce segment si
+ * une offre y entrait aujourd'hui", pure, sans aléa.
+ */
+export function computeSegmentAvailability(
+  market: Market,
+  segments: readonly CustomerSegment[],
+  date: GameDate,
+): readonly SegmentAvailability[] {
+  const monthOfYearIndex = date.month - 1;
+
+  let referencePriceWeightSum = 0;
+  let referencePriceWeighted = 0;
+  for (const segment of segments) {
+    referencePriceWeighted += segment.referencePrice * segment.relativeSize;
+    referencePriceWeightSum += segment.relativeSize;
+  }
+  const marketReferencePrice = referencePriceWeightSum > 0 ? referencePriceWeighted / referencePriceWeightSum : 0;
+
+  return segments.map((segment) => {
+    const seasonalMultiplier = segment.seasonality[monthOfYearIndex] ?? 1;
+    const availableMarket =
+      marketReferencePrice > 0
+        ? (market.sizeMonthlyRevenuePotential * segment.relativeSize * seasonalMultiplier) / marketReferencePrice
+        : 0;
+    return { segmentId: segment.id, segmentLabel: segment.label, availableMarket };
+  });
 }

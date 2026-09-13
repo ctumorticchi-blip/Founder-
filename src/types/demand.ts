@@ -60,3 +60,16 @@ export interface DemandFunnelResult {
   /** Ventilation par segment (spec M11.2.3 §2.2) — additif, jamais consommé par M11.2.2 lui-même. */
   readonly bySegment: readonly SegmentDemandContribution[];
 }
+
+/**
+ * Taille adressable d'un segment sur un marché, INDÉPENDANTE de toute
+ * offre (spec M11.2.6.2 §1) — contrairement à `SegmentDemandContribution`
+ * qui suppose une offre déjà construite. Utile pour une étude de marché
+ * en amont d'une décision de lancement.
+ */
+export interface SegmentAvailability {
+  readonly segmentId: string;
+  readonly segmentLabel: string;
+  /** Unité native de la famille (heures, couverts, unités, mandats, abonnés). */
+  readonly availableMarket: number;
+}
