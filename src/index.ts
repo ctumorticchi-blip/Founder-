@@ -157,9 +157,12 @@ export {
 export type { CustomerSegment } from "./types/customerSegment.js";
 export type {
   AccountContract,
+  AccountHistoryEntry,
   AccountNegotiationDecision,
   AccountOfferRelationship,
   AccountProposal,
+  AccountRelationshipState,
+  AccountSatisfactionState,
   StrategicAccount,
   StrategicAccountAction,
   StrategicAccountOpportunity,
@@ -168,6 +171,13 @@ export type {
 } from "./types/strategicAccount.js";
 export type { StrategicAccountIdentity } from "./engine/business/strategicAccountIdentity.js";
 export { generateStrategicAccountIdentity } from "./engine/business/strategicAccountIdentity.js";
+export {
+  CONTRACTUAL_BREACH_FRUSTRATION_EWMA_ALPHA,
+  INITIAL_ACCOUNT_TRUST,
+  TRUST_EWMA_ALPHA,
+  computeAccountConcentration,
+  computeAccountRelationshipUpdate,
+} from "./engine/business/accountRelationship.js";
 export {
   MAX_ACTIVE_STRATEGIC_ACCOUNT_OPPORTUNITIES_PER_BUSINESS,
   MAX_RESEARCH_HOURS_FOR_FULL_CONFIDENCE,
