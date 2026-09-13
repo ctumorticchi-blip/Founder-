@@ -6,7 +6,7 @@ import { clamp } from "../util/math.js";
 import { getMarketSegments } from "../market/segments.js";
 import { estimate } from "../intelligence/intelligence.js";
 import { generateStrategicAccountIdentity } from "./strategicAccountIdentity.js";
-import { INITIAL_ACCOUNT_TRUST } from "./accountRelationship.js";
+import { INITIAL_ACCOUNT_TRUST, computeAccountConcentration } from "./accountRelationship.js";
 import type { EconomicFamily } from "../../types/business.js";
 import type { Offer } from "../../types/offer.js";
 import type {
@@ -545,17 +545,29 @@ export function allocateContractOutcomes(
   });
 }
 
+/** Contexte de rapport de force pour une décision de RENOUVELLEMENT (spec M11.2.4.5 §11) — neutre par défaut, sans effet tant qu'aucun compte n'est en renouvellement. */
+export interface RenewalContext {
+  readonly priorBusinessRevenue: number;
+  readonly competitivePressure: number;
+  readonly reputationScore: number;
+}
+const NEUTRAL_RENEWAL_CONTEXT: RenewalContext = { priorBusinessRevenue: 0, competitivePressure: 0, reputationScore: 0 };
+
 /**
- * Applique une série d'actions joueur (temps investi/négociation) sur une
- * liste d'opportunités (spec §6, §8) — une par une, dans l'ordre fourni,
- * jamais de résimulation ni de RNG (déjà résolu dans les fonctions pures
- * appelées ici).
+ * Applique une série d'actions joueur (temps investi/négociation/
+ * renouvellement) sur une liste d'opportunités (spec §6, §8, M11.2.4.5
+ * §11-§12) — une par une, dans l'ordre fourni, jamais de résimulation ni
+ * de RNG (déjà résolu dans les fonctions pures appelées ici). Distingue
+ * la négociation initiale (`"researching"`/`"negotiating"`) du
+ * renouvellement (`"won"` avec `contract.renewalProposal` en attente) —
+ * deux cycles de vie distincts, jamais mélangés.
  */
 export function applyStrategicAccountActions(
   opportunities: readonly StrategicAccountOpportunity[],
   actions: readonly StrategicAccountAction[],
   family: EconomicFamily,
   date: GameDate,
+  renewalContext: RenewalContext = NEUTRAL_RENEWAL_CONTEXT,
 ): readonly StrategicAccountOpportunity[] {
   let result = opportunities;
   for (const action of actions) {
@@ -564,15 +576,23 @@ export function applyStrategicAccountActions(
       throw new RangeError(`applyStrategicAccountActions: opportunité "${action.opportunityId}" introuvable.`);
     }
     const opportunity = result[index]!;
-    const updated =
-      action.kind === "invest-time"
-        ? applyResearchHours(opportunity, action.hours, family)
-        : resolveAccountNegotiationDecision(
-            opportunity,
-            family,
-            action.kind === "accept" || action.kind === "withdraw" ? { action: action.kind } : { action: action.kind, proposal: action.proposal },
-            date,
-          );
+    let updated: StrategicAccountOpportunity;
+    if (action.kind === "invest-time") {
+      updated = applyResearchHours(opportunity, action.hours, family);
+    } else if (action.kind !== "propose" && opportunity.status === "won" && opportunity.contract?.renewalProposal) {
+      // "propose" n'a aucun sens pour un renouvellement (c'est le CLIENT qui
+      // ouvre, jamais le joueur) — exclu ici, retombe sur la négociation
+      // initiale ci-dessous, qui rejettera l'action à raison (statut "won").
+      const decision = action.kind === "accept" || action.kind === "withdraw" ? { action: action.kind } : { action: action.kind, proposal: action.proposal };
+      const concentration = computeAccountConcentration(
+        opportunity.contract.lastMonthServedVolume * opportunity.contract.price,
+        renewalContext.priorBusinessRevenue,
+      );
+      updated = resolveAccountRenewalDecision(opportunity, family, decision, concentration, renewalContext.competitivePressure, renewalContext.reputationScore, date);
+    } else {
+      const decision = action.kind === "accept" || action.kind === "withdraw" ? { action: action.kind } : { action: action.kind, proposal: action.proposal };
+      updated = resolveAccountNegotiationDecision(opportunity, family, decision, date);
+    }
     result = result.map((o, i) => (i === index ? updated : o));
   }
   return result;

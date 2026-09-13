@@ -244,3 +244,63 @@ describe("Prospecting & Negotiation — intégration mensuelle (spec M11.2.4.2 �
     expect(contract.lastMonthServedVolume + contract.lastMonthUnservedVolume).toBeCloseTo(contract.volume, 3);
   });
 });
+
+describe("Renewal & Loss — intégration mensuelle (spec M11.2.4.5 §11-§12)", () => {
+  function signInitialContract(seed: number): { state: GameState; opportunityId: string } {
+    const { state: initial, opportunityId } = advanceUntilFirstOpportunity(seed);
+    const budget = deriveTrueOpportunityBudget(opportunityId, AGENCY_GRANDS_COMPTES_REFERENCE_PRICE);
+    const tooHigh: AccountProposal = { price: budget.maxAcceptablePrice * 2, volume: 10, qualityCommitment: 60, durationMonths: 6 };
+    let state = simulateMonth(initial, monthActions("conseil-1", true, [{ kind: "propose", opportunityId, proposal: tooHigh }]), seed);
+    state = simulateMonth(state, monthActions("conseil-1", true, [{ kind: "accept", opportunityId }]), seed);
+    return { state, opportunityId };
+  }
+
+  it("scénario complet : signature -> exécution -> renouvellement proposé par le client -> accepté -> contrat renouvelé, événement causal émis", () => {
+    const seed = 2;
+    const { state: signed, opportunityId } = signInitialContract(seed);
+    const durationMonths = signed.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!.contract!.durationMonths;
+
+    // Avance jusqu'à épuisement du terme, sans aucune action (le contrat s'exécute normalement).
+    let state = signed;
+    for (let i = 0; i < durationMonths; i++) {
+      state = simulateMonth(state, monthActions("conseil-1", true, []), seed);
+    }
+    let opportunity = state.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!;
+    expect(opportunity.status).toBe("won"); // le compte reste actif pendant toute la négociation de renouvellement
+    expect(opportunity.contract!.renewalProposal).not.toBeNull();
+
+    state = simulateMonth(state, monthActions("conseil-1", true, [{ kind: "accept", opportunityId }]), seed);
+    opportunity = state.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!;
+    expect(opportunity.status).toBe("won");
+    expect(opportunity.contract!.renewalProposal).toBeNull();
+    expect(opportunity.contract!.monthsRemaining).toBeGreaterThan(0);
+    expect(state.events.some((e) => e.kind === "strategic-account-renewed")).toBe(true);
+  });
+
+  it("un renouvellement jamais résolu finit en départ réel après le délai de grâce, événement causal émis, capacité réabsorbée par new/repeat ensuite", () => {
+    const seed = 2;
+    const { state: signed, opportunityId } = signInitialContract(seed);
+    const durationMonths = signed.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!.contract!.durationMonths;
+
+    let state = signed;
+    for (let i = 0; i < durationMonths; i++) {
+      state = simulateMonth(state, monthActions("conseil-1", true, []), seed);
+    }
+    expect(state.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!.contract!.renewalProposal).not.toBeNull();
+
+    let lostEventSeen = false;
+    for (let i = 0; i < 5 && !lostEventSeen; i++) {
+      state = simulateMonth(state, monthActions("conseil-1", true, []), seed);
+      lostEventSeen = state.events.some((e) => e.kind === "strategic-account-lost");
+    }
+    expect(lostEventSeen).toBe(true);
+    const opportunity = state.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!;
+    expect(opportunity.status).toBe("lost");
+    expect(opportunity.contract).toBeNull();
+
+    // Le mois suivant le départ, l'entreprise continue de fonctionner normalement
+    // (capacité réellement libérée, réabsorbable par new/repeat — aucune exception).
+    const next = simulateMonth(state, monthActions("conseil-1", true, []), seed);
+    expect(next.businesses[0]).toBeDefined();
+  });
+});

@@ -168,16 +168,40 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
     }
 
     // Actions du joueur sur les opportunités EXISTANTES (investissement de
-    // temps, négociation) résolues AVANT le calcul économique du mois (spec
-    // M11.2.4.3 décision 6) : un contrat accepté CE mois-ci doit consommer
-    // de la capacité CE MÊME mois — même principe que applyOfferActions,
-    // déjà appliqué avant le calcul économique dans resolveBusinessMonth.
+    // temps, négociation initiale, RENOUVELLEMENT) résolues AVANT le calcul
+    // économique du mois (spec M11.2.4.3 décision 6) : un contrat accepté
+    // CE mois-ci doit consommer de la capacité CE MÊME mois — même principe
+    // que applyOfferActions, déjà appliqué avant le calcul économique dans
+    // resolveBusinessMonth. Le rapport de force du renouvellement (spec
+    // M11.2.4.5 §11) utilise le CA de l'entreprise au mois PRÉCÉDENT
+    // (déjà connu) et la pression concurrentielle agrégée du marché.
+    const competitivePressure = competitions[owned.marketId]!.totalCapturedRevenueShare;
+    const opportunitiesBeforeActions = owned.strategicAccountOpportunities;
     const opportunitiesAfterActions = applyStrategicAccountActions(
-      owned.strategicAccountOpportunities,
+      opportunitiesBeforeActions,
       action.strategicAccountActions ?? [],
       owned.familyState.family,
       nextDate,
+      { priorBusinessRevenue: owned.lastStatement?.revenue ?? 0, competitivePressure, reputationScore: owned.familyState.reputationScore },
     );
+
+    // Renouvellement accepté CE mois-ci (spec M11.2.4.5 §12) : un
+    // accept/counter réussi REMPLACE le contrat par de nouvelles
+    // conditions (`signContract`, qui efface `renewalProposal`) — la seule
+    // manière d'atteindre `renewalProposal: null` sur une opportunité
+    // restée `"won"` depuis un état où un renouvellement était en attente
+    // (`withdraw` produit `"lost"`, un contre-rejet garde `renewalProposal`
+    // non nul).
+    for (const before of opportunitiesBeforeActions) {
+      const after = opportunitiesAfterActions.find((o) => o.id === before.id);
+      if (before.status === "won" && before.contract?.renewalProposal && after?.status === "won" && after.contract && !after.contract.renewalProposal) {
+        events.push({
+          kind: "strategic-account-renewed",
+          date: nextDate,
+          message: `"${after.companyName}" a renouvelé son contrat avec "${owned.business.name}" (${Math.round(after.contract.price).toLocaleString("fr-FR")} €, ${after.contract.durationMonths} mois).`,
+        });
+      }
+    }
 
     const demandShare = availableDemandShare(competitions[owned.marketId]!);
     const resolved = resolveBusinessMonth(
@@ -188,7 +212,27 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
       rng,
       nextDate,
       markets[owned.marketId]!,
+      competitivePressure,
     );
+
+    // Départ réel (spec M11.2.4.5 §12, §14) : soit volontaire (`withdraw`
+    // ce mois-ci, déjà "lost" dans `opportunitiesAfterActions` avant même
+    // la résolution économique), soit automatique (délai de renouvellement
+    // expiré PENDANT la résolution, businessResolution.ts) — les deux
+    // détectés en comparant le statut avant/après `resolveBusinessMonth`.
+    for (const before of opportunitiesBeforeActions) {
+      const afterActions = opportunitiesAfterActions.find((o) => o.id === before.id);
+      const afterResolution = resolved.updated.strategicAccountOpportunities.find((o) => o.id === before.id);
+      const justWithdrawn = before.status === "won" && afterActions?.status === "lost";
+      const justExpired = afterActions?.status === "won" && afterResolution?.status === "lost";
+      if (justWithdrawn || justExpired) {
+        events.push({
+          kind: "strategic-account-lost",
+          date: nextDate,
+          message: `"${before.companyName}" a mis fin à sa relation avec "${owned.business.name}"${justExpired ? " faute de renouvellement" : ""}.`,
+        });
+      }
+    }
 
     if (isNew) {
       events.push({
