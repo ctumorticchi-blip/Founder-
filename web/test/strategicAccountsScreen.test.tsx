@@ -214,3 +214,158 @@ describe("Strategic Accounts — négociation (spec M11.2.4.2 §8)", () => {
     expect(document.body.textContent).not.toContain(negotiatingOpportunity.id);
   });
 });
+
+describe("Strategic Accounts — Relationship & Concentration (spec M11.2.4.4 §13)", () => {
+  it("un contrat signé avec relationship peuplé affiche satisfaction/confiance/concentration en vocabulaire qualitatif, jamais un score brut ni un id technique", async () => {
+    const user = userEvent.setup();
+    const firstRender = renderApp();
+
+    await user.click(screen.getByRole("button", { name: /commencer ma vie/i }));
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/agence de conseil/i));
+    await user.click(screen.getByRole("button", { name: /lancer l'entreprise/i }));
+    await endMonth(user);
+
+    const businessId = loadSave()!.draft.businesses[0]!.businessId;
+
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByRole("button", { name: /nouvelle offre/i }));
+    await user.type(screen.getByLabelText(/nom de l'offre/i), "Accompagnement grands comptes");
+    await user.click(screen.getByRole("button", { name: /grands comptes ponctuels/i }));
+    await user.click(screen.getByRole("button", { name: /accompagnement continu/i }));
+    await user.click(screen.getByRole("button", { name: /créer l'offre/i }));
+    await endMonth(user);
+
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/accompagnement grands comptes/i));
+    await user.click(screen.getByRole("button", { name: /lancer l'offre/i }));
+    await endMonth(user);
+
+    const save = loadSave()!;
+    const business = save.gameState.businesses.find((b) => b.id === businessId)!;
+    const offerId = business.business.offers[0]!.id;
+    const wonOpportunity = {
+      id: `${businessId}:${offerId}:agency-grands-comptes:x`,
+      businessId,
+      offerId,
+      segmentId: "agency-grands-comptes",
+      companyName: "Groupe Meridien",
+      contactName: "Camille Marchand",
+      contactRole: "Directrice générale",
+      source: "network" as const,
+      discoveredAt: save.gameState.date,
+      status: "won" as const,
+      researchHoursInvested: 40,
+      budgetEstimate: {
+        price: { value: 13_000, uncertainty: 0 },
+        volume: { value: 40, uncertainty: 0 },
+        qualityCommitment: { value: 70, uncertainty: 0 },
+      },
+      lastAccountProposal: null,
+      contract: {
+        price: 13_000,
+        volume: 40,
+        qualityCommitment: 70,
+        durationMonths: 6,
+        monthsRemaining: 5,
+        signedAt: save.gameState.date,
+        lastMonthServedVolume: 40,
+        lastMonthUnservedVolume: 0,
+      },
+      relationship: {
+        satisfaction: { scoreThisMonth: 82, smoothedScore: 82, diagnosisThisMonth: null },
+        trust: 0.82,
+        breachFrustration: 0,
+        history: [],
+      },
+    };
+    writeSave({
+      ...save,
+      gameState: {
+        ...save.gameState,
+        businesses: save.gameState.businesses.map((b) =>
+          b.id === businessId ? { ...b, strategicAccountOpportunities: [wonOpportunity] } : b,
+        ),
+      },
+    });
+
+    firstRender.unmount();
+    renderApp();
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/comptes stratégiques/i));
+
+    expect(await screen.findByText(/contrat signé/i)).toBeInTheDocument();
+    expect(screen.getByText(/très satisfait/i)).toBeInTheDocument();
+    expect(screen.getByText(/confiance solide/i)).toBeInTheDocument();
+    expect(screen.getByText(/% du ca/i)).toBeInTheDocument();
+    expect(screen.getByText(/dépendance/i)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(wonOpportunity.id);
+    expect(document.body.textContent).not.toContain("smoothedScore");
+    expect(document.body.textContent).not.toContain("breachFrustration");
+  });
+
+  it("relationship: null (mois pas encore résolu sous ce contrat) affiche un état neutre explicite, jamais un score inventé", async () => {
+    const user = userEvent.setup();
+    const firstRender = renderApp();
+
+    await user.click(screen.getByRole("button", { name: /commencer ma vie/i }));
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/agence de conseil/i));
+    await user.click(screen.getByRole("button", { name: /lancer l'entreprise/i }));
+    await endMonth(user);
+
+    const businessId = loadSave()!.draft.businesses[0]!.businessId;
+    const save = loadSave()!;
+    const wonOpportunityNoRelationship = {
+      id: `${businessId}:offer-x:agency-grands-comptes:x`,
+      businessId,
+      offerId: "offer-x",
+      segmentId: "agency-grands-comptes",
+      companyName: "Groupe Meridien",
+      contactName: "Camille Marchand",
+      contactRole: "Directrice générale",
+      source: "network" as const,
+      discoveredAt: save.gameState.date,
+      status: "won" as const,
+      researchHoursInvested: 40,
+      budgetEstimate: {
+        price: { value: 13_000, uncertainty: 0 },
+        volume: { value: 40, uncertainty: 0 },
+        qualityCommitment: { value: 70, uncertainty: 0 },
+      },
+      lastAccountProposal: null,
+      contract: {
+        price: 13_000,
+        volume: 40,
+        qualityCommitment: 70,
+        durationMonths: 6,
+        monthsRemaining: 6,
+        signedAt: save.gameState.date,
+        lastMonthServedVolume: 0,
+        lastMonthUnservedVolume: 0,
+      },
+      relationship: null,
+    };
+    writeSave({
+      ...save,
+      gameState: {
+        ...save.gameState,
+        businesses: save.gameState.businesses.map((b) =>
+          b.id === businessId ? { ...b, strategicAccountOpportunities: [wonOpportunityNoRelationship] } : b,
+        ),
+      },
+    });
+
+    firstRender.unmount();
+    renderApp();
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/comptes stratégiques/i));
+
+    expect(await screen.findByText(/contrat signé/i)).toBeInTheDocument();
+    expect(screen.getByText(/pas encore d'historique de livraison/i)).toBeInTheDocument();
+  });
+});

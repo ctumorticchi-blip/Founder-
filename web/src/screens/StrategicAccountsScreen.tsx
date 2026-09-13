@@ -1,10 +1,16 @@
 import { useState } from "react";
-import type { AccountProposal, EconomicFamily, StrategicAccountAction, StrategicAccountOpportunity } from "@founder/engine";
+import { computeAccountConcentration, type AccountProposal, type EconomicFamily, type StrategicAccountAction, type StrategicAccountOpportunity } from "@founder/engine";
 import { useGame } from "../state/GameProvider";
 import { useNavigation } from "../state/Navigation";
 import { getPublicSegmentOptions } from "../data/publicSegments";
 import { demandUnitLabel } from "../data/offerModels";
-import { formatEstimateRange, strategicAccountSourceLabel } from "../data/strategicAccountLabels";
+import {
+  accountSatisfactionLabel,
+  concentrationRiskLabel,
+  formatEstimateRange,
+  strategicAccountSourceLabel,
+  trustLevelLabel,
+} from "../data/strategicAccountLabels";
 import { NumberField } from "../components/ui/NumberField";
 
 /** Remplace toute action antérieure du même type sur la même opportunité par la nouvelle (évite d'empiler deux "invest-time" le même mois). */
@@ -48,11 +54,13 @@ function ProposalForm({
 function OpportunityCard({
   opportunity,
   family,
+  businessRevenueThisMonth,
   onInvestTime,
   onNegotiate,
 }: {
   readonly opportunity: StrategicAccountOpportunity;
   readonly family: EconomicFamily;
+  readonly businessRevenueThisMonth: number;
   readonly onInvestTime: (hours: number) => void;
   readonly onNegotiate: (action: Extract<StrategicAccountAction, { kind: "propose" | "accept" | "counter" | "withdraw" }>) => void;
 }) {
@@ -102,6 +110,36 @@ function OpportunityCard({
               {opportunity.contract.durationMonths} mois
             </span>
           </div>
+          {opportunity.relationship ? (
+            <>
+              <div className="row row--between">
+                <span className="text-sm text-secondary">Satisfaction</span>
+                <span className="text-sm" style={{ fontWeight: 700 }}>
+                  {accountSatisfactionLabel(opportunity.relationship.satisfaction.smoothedScore)}
+                </span>
+              </div>
+              <div className="row row--between">
+                <span className="text-sm text-secondary">Confiance</span>
+                <span className="text-sm" style={{ fontWeight: 700 }}>
+                  {trustLevelLabel(opportunity.relationship.trust)}
+                </span>
+              </div>
+              <div className="row row--between">
+                <span className="text-sm text-secondary">Concentration</span>
+                <span className="text-sm" style={{ fontWeight: 700 }}>
+                  {Math.round(
+                    computeAccountConcentration(opportunity.contract.lastMonthServedVolume * opportunity.contract.price, businessRevenueThisMonth) * 100,
+                  )}
+                  % du CA · {concentrationRiskLabel(computeAccountConcentration(opportunity.contract.lastMonthServedVolume * opportunity.contract.price, businessRevenueThisMonth))}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="row row--between">
+              <span className="text-sm text-secondary">Satisfaction</span>
+              <span className="text-sm text-secondary">Pas encore d'historique de livraison</span>
+            </div>
+          )}
         </>
       ) : (
         <>
@@ -236,6 +274,7 @@ export function StrategicAccountsScreen({ businessId }: { readonly businessId: s
             key={opportunity.id}
             opportunity={opportunity}
             family={draftBusiness.family}
+            businessRevenueThisMonth={business.lastStatement?.revenue ?? 0}
             onInvestTime={(hours) => queueAction({ kind: "invest-time", opportunityId: opportunity.id, hours })}
             onNegotiate={queueAction}
           />
