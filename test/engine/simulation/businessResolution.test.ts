@@ -5,6 +5,7 @@ import type { BusinessAction, BusinessFamilyDecisions, CreateBusinessSpec, Owned
 import type { Market } from "../../../src/types/market.js";
 import type { Offer, OfferAction } from "../../../src/types/offer.js";
 import type { SegmentCustomerMemory } from "../../../src/types/satisfaction.js";
+import type { StrategicAccountOpportunity } from "../../../src/types/strategicAccount.js";
 
 const SERVICE_SPEC: CreateBusinessSpec = {
   family: "service",
@@ -660,5 +661,129 @@ describe("resolveBusinessMonth — rejette une famille de décisions incompatibl
       storageCapacity: Number.POSITIVE_INFINITY,
     };
     expect(() => resolveBusinessMonth(owned, wrongAction, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(1), DATE, SERVICE_MARKET)).toThrow(RangeError);
+  });
+});
+
+describe("Contract Execution — intégration réelle (spec M11.2.4.3)", () => {
+  // Segment "service" marqué strategicAccountsEligible (engine/market/segments.ts),
+  // referencePrice=65 -> prix générique 60 assure priceFit=1 (isole l'effet testé).
+  const CONTRACT_SEGMENT_ID = "service-entreprises-exigeantes";
+  const OFFER_PRICE = 60;
+  const CONTRACT_RNG_SEED = 7;
+
+  function contractOfferActions(): OfferAction[] {
+    return [
+      {
+        kind: "create",
+        spec: { id: "svc-offer", name: "Accompagnement grands comptes", businessModel: "service-hours", positioning: "standard", targetSegment: CONTRACT_SEGMENT_ID, price: OFFER_PRICE },
+      },
+      { kind: "launch", offerId: "svc-offer" },
+    ];
+  }
+
+  function wonOpportunity(volume: number, price: number, monthsRemaining = 6): StrategicAccountOpportunity {
+    return {
+      id: "svc:svc-offer:won-1",
+      businessId: "svc",
+      offerId: "svc-offer",
+      segmentId: CONTRACT_SEGMENT_ID,
+      companyName: "Groupe Meridien",
+      contactName: "Camille Marchand",
+      contactRole: "Directrice générale",
+      source: "network",
+      discoveredAt: DATE,
+      status: "won",
+      researchHoursInvested: 40,
+      budgetEstimate: {
+        price: { value: price, uncertainty: 0 },
+        volume: { value: volume, uncertainty: 0 },
+        qualityCommitment: { value: 60, uncertainty: 0 },
+      },
+      lastAccountProposal: null,
+      contract: { price, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 },
+    };
+  }
+
+  function contractAction(overrides: Partial<BusinessAction> = {}): BusinessAction {
+    return serviceAction({ offerActions: contractOfferActions(), founderHoursAllocated: 100_000, ...overrides });
+  }
+
+  /** Entreprise + offre lancée SANS contrat, capacité abondante — sert à observer la demande organique brute (jamais influencée par un contrat, `computeOfferDemand` ne le lit pas). */
+  function organicBaseline() {
+    const owned = createOwnedBusiness("svc", SERVICE_SPEC);
+    return resolveBusinessMonth(owned, contractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(CONTRACT_RNG_SEED), DATE, SERVICE_MARKET);
+  }
+
+  it("capacité suffisante : le volume contractuel est intégralement servi, facturé au PRIX DU CONTRAT (pas celui de l'offre), contract mis à jour", () => {
+    const baseline = organicBaseline();
+    const baselineSegment = baseline.updated.business.offers[0]!.lastDemand!.bySegment.find((s) => s.segmentId === CONTRACT_SEGMENT_ID)!;
+    expect(baselineSegment.demand).toBeGreaterThan(0);
+
+    const contractVolume = baselineSegment.demand * 0.5; // <= demande agrégée du segment -> reclassement pur (overlap = contractVolume, incremental = 0)
+    const contractPrice = OFFER_PRICE * 3; // très supérieur au prix générique -> écart de CA mesurable si le swap de prix est correct.
+    const owned = createOwnedBusiness("svc", SERVICE_SPEC);
+    const ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonOpportunity(contractVolume, contractPrice)] };
+
+    const result = resolveBusinessMonth(ownedWithContract, contractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(CONTRACT_RNG_SEED), DATE, SERVICE_MARKET);
+    const contract = result.updated.strategicAccountOpportunities[0]!.contract!;
+
+    // Capacité abondante des deux côtés -> aucune perte, contrat intégralement servi.
+    expect(contract.lastMonthUnservedVolume).toBe(0);
+    expect(contract.lastMonthServedVolume).toBeCloseTo(contractVolume, 6);
+    expect(contract.monthsRemaining).toBe(5); // décrémenté de 1 (signé à durée 6)
+
+    // CA = CA organique inchangé (même demande new/repeat, même capacité abondante) - la part
+    // contractuelle facturée au prix générique + cette même part au PRIX DU CONTRAT.
+    const expectedRevenue = baseline.statement.revenue + contractVolume * (contractPrice - OFFER_PRICE);
+    expect(result.statement.revenue).toBeCloseTo(expectedRevenue, 3);
+    // variableCosts inchangés : même coût unitaire quel que soit le canal (décision 3).
+    expect(result.statement.variableCosts).toBeCloseTo(baseline.statement.variableCosts, 6);
+  });
+
+  it("surcharge : le grand compte perd EXACTEMENT la même proportion que new/repeat (spec §3), conservation vérifiée", () => {
+    const baseline = organicBaseline();
+    const baselineSegment = baseline.updated.business.offers[0]!.lastDemand!.bySegment.find((s) => s.segmentId === CONTRACT_SEGMENT_ID)!;
+    const totalDemandBaseline = baseline.updated.business.offers[0]!.lastDemand!.demand;
+
+    // contractVolume <= demande du segment -> reclassement pur : totalDemandIncludingContractual == totalDemandBaseline (identité spec §2).
+    const contractVolume = baselineSegment.demand * 0.5;
+    const capacityForOffer = totalDemandBaseline * 0.5; // force une perte de 50% sur TOUS les flux, sans priorité.
+
+    const owned = createOwnedBusiness("svc", SERVICE_SPEC);
+    const ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonOpportunity(contractVolume, OFFER_PRICE * 2)] };
+    const result = resolveBusinessMonth(
+      ownedWithContract,
+      contractAction({ founderHoursAllocated: capacityForOffer }),
+      DEMAND_SHARE,
+      LEADERSHIP_SKILL,
+      createRng(CONTRACT_RNG_SEED),
+      DATE,
+      SERVICE_MARKET,
+    );
+
+    const offer = result.updated.business.offers[0]!;
+    const demand = offer.lastDemand!;
+    const contract = result.updated.strategicAccountOpportunities[0]!.contract!;
+
+    expect(demand.demand).toBeCloseTo(totalDemandBaseline, 6); // reclassement pur, pas d'incrément
+    expect(demand.lostToCapacity).toBeGreaterThan(0);
+
+    const expectedContractualLoss = demand.lostToCapacity * (contractVolume / totalDemandBaseline);
+    expect(contract.lastMonthUnservedVolume).toBeGreaterThan(0);
+    expect(contract.lastMonthUnservedVolume).toBeCloseTo(expectedContractualLoss, 3);
+    // Conservation exacte : servi + non servi = volume contracté, à l'arrondi flottant près.
+    expect(contract.lastMonthServedVolume + contract.lastMonthUnservedVolume).toBeCloseTo(contractVolume, 6);
+    // Ventes totales (tous flux) + pertes totales = demande totale (aucune destruction/duplication).
+    expect(demand.sales + demand.lostToCapacity).toBeCloseTo(demand.demand, 6);
+  });
+
+  it("aucune opportunité 'won' pour l'offre -> comportement strictement identique à avant M11.2.4.3 (non-régression)", () => {
+    const owned = createOwnedBusiness("svc", SERVICE_SPEC);
+    const withEmptyOpportunities: OwnedBusiness = { ...owned, strategicAccountOpportunities: [] };
+    const a = resolveBusinessMonth(owned, contractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(CONTRACT_RNG_SEED), DATE, SERVICE_MARKET);
+    const b = resolveBusinessMonth(withEmptyOpportunities, contractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(CONTRACT_RNG_SEED), DATE, SERVICE_MARKET);
+    expect(b.statement.revenue).toBe(a.statement.revenue);
+    expect(b.statement.variableCosts).toBe(a.statement.variableCosts);
+    expect(b.updated.strategicAccountOpportunities).toEqual([]);
   });
 });

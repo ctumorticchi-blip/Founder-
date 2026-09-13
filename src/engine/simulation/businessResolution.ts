@@ -36,6 +36,14 @@ import {
   computeWordOfMouth,
   updateSegmentMemory,
 } from "../customer/retention.js";
+import {
+  allocateContractOutcomes,
+  computeContractedVolumeForOffer,
+  computeContractualCapacityAllocation,
+  computeContractualDemandAdjustment,
+  wonOpportunitiesForOffer,
+  type ContractOutcome,
+} from "../business/strategicAccounts.js";
 import type { MonthlyFinancialStatement, EconomicFamily } from "../../types/business.js";
 import type { OwnedProperty } from "../../types/realEstate.js";
 import type { Offer, OfferAction } from "../../types/offer.js";
@@ -43,6 +51,7 @@ import type { DemandFunnelResult } from "../../types/demand.js";
 import type { CustomerSegment } from "../../types/customerSegment.js";
 import type { SegmentCustomerMemory } from "../../types/satisfaction.js";
 import type { Market } from "../../types/market.js";
+import type { StrategicAccountOpportunity } from "../../types/strategicAccount.js";
 import type { BusinessAction, BusinessFamilyState, CreateBusinessSpec, OwnedBusiness } from "./types.js";
 
 export const INITIAL_REPUTATION_SCORE = 0.1;
@@ -264,6 +273,81 @@ function resolveOfferOutcome(
   };
 }
 
+interface ContractualIntegration {
+  /** Funnel avec la demande du segment ciblé réduite de `overlap` (spec §2) — à passer TEL QUEL à `computeTotalDemand`/`resolveOfferOutcome`, jamais modifiées. */
+  readonly adjustedFunnel: Omit<DemandFunnelResult, "capacity" | "sales" | "lostToCapacity">;
+  readonly allocation: ReturnType<typeof computeContractualCapacityAllocation>;
+  readonly contractedVolume: number;
+  readonly wonOpportunities: readonly StrategicAccountOpportunity[];
+}
+
+/**
+ * Point d'entrée unique de l'intégration contractuelle (spec M11.2.4.3
+ * §2-§3, décision 2 du plan) — structure identique pour les 4 familles à
+ * capacité (seule l'unité change) : ajuste le funnel pour retirer le
+ * chevauchement avec le volume contracté, puis calcule l'allocation à 3
+ * flux. Ne modifie JAMAIS `computeTotalDemand` : l'appelle simplement avec
+ * le funnel ajusté.
+ */
+function integrateContractualDemand(
+  funnel: Omit<DemandFunnelResult, "capacity" | "sales" | "lostToCapacity">,
+  repeatDemandBySegment: ReadonlyMap<string, number>,
+  offer: Offer,
+  capacityForOffer: number,
+  strategicAccountOpportunities: readonly StrategicAccountOpportunity[],
+): ContractualIntegration {
+  const contractedVolume = computeContractedVolumeForOffer(strategicAccountOpportunities, offer.id);
+  const targetIndex = funnel.bySegment.findIndex((s) => s.segmentId === offer.targetSegment);
+  const aggregateDemandForTarget = targetIndex === -1 ? 0 : funnel.bySegment[targetIndex]!.demand;
+  const { overlap } = computeContractualDemandAdjustment(aggregateDemandForTarget, contractedVolume);
+  const adjustedFunnel =
+    targetIndex === -1
+      ? funnel
+      : { ...funnel, bySegment: funnel.bySegment.map((s, i) => (i === targetIndex ? { ...s, demand: s.demand - overlap } : s)) };
+  const newRepeatTotalDemand = computeTotalDemand(adjustedFunnel, repeatDemandBySegment);
+  const allocation = computeContractualCapacityAllocation({ newRepeatTotalDemand, contractedVolume, capacityForOffer });
+  const wonOpportunities = wonOpportunitiesForOffer(strategicAccountOpportunities, offer.id);
+  return { adjustedFunnel, allocation, contractedVolume, wonOpportunities };
+}
+
+/**
+ * CA réellement facturé pour une offre (spec §3, principe 9, décision 3) :
+ * l'engin économique a été appelé au tarif générique de l'offre pour TOUT
+ * le volume (y compris contractuel) — ce correctif remplace la part
+ * contractuelle par son propre prix, sans jamais dupliquer un moteur de
+ * revenu.
+ */
+function computeOfferRevenueWithContracts(genericRevenue: number, offerPrice: number, allocation: ContractualIntegration["allocation"], contractOutcomes: readonly ContractOutcome[]): number {
+  const contractRevenue = contractOutcomes.reduce((sum, o) => sum + o.revenue, 0);
+  return genericRevenue - allocation.contractualSales * offerPrice + contractRevenue;
+}
+
+/**
+ * Fusionne les résultats d'exécution d'un mois dans la carte des
+ * opportunités de l'entreprise (spec §5, plan Tâche 3 point 12) : chaque
+ * contrat exécuté voit son volume réellement livré/perdu enregistré et
+ * `monthsRemaining` décrémenté d'un mois (plancher 0, aucun effet à 0 —
+ * renouvellement/perte différés à M11.2.4.5).
+ */
+function applyContractExecutionOutcomes(
+  opportunitiesById: Map<string, StrategicAccountOpportunity>,
+  outcomes: readonly ContractOutcome[],
+): void {
+  for (const outcome of outcomes) {
+    const opportunity = opportunitiesById.get(outcome.opportunityId);
+    if (!opportunity?.contract) continue;
+    opportunitiesById.set(outcome.opportunityId, {
+      ...opportunity,
+      contract: {
+        ...opportunity.contract,
+        lastMonthServedVolume: outcome.servedVolume,
+        lastMonthUnservedVolume: outcome.unservedVolume,
+        monthsRemaining: Math.max(0, opportunity.contract.monthsRemaining - 1),
+      },
+    });
+  }
+}
+
 export interface ResolvedBusinessMonth {
   readonly updated: OwnedBusiness;
   readonly statement: MonthlyFinancialStatement;
@@ -375,6 +459,11 @@ export function resolveBusinessMonth(
   let revenue = 0;
   let variableCosts = 0;
   let offersWithDemand: readonly Offer[] = offersAfterActions;
+  // Contrats grands comptes (spec M11.2.4.3) : initialisée depuis TOUTES les
+  // opportunités de l'entreprise (pas seulement celles de l'offre en cours
+  // de traitement) — chaque famille y fusionne les résultats d'exécution
+  // des offres qu'elle traite, jamais une résimulation.
+  const opportunitiesById = new Map(owned.strategicAccountOpportunities.map((o) => [o.id, o]));
 
   switch (action.decisions.family) {
     case "service": {
@@ -403,37 +492,50 @@ export function resolveBusinessMonth(
         // client existante (spec M11.2.3.1 §1-§3) — c'est elle, jamais la seule
         // demande d'acquisition, qui doit désormais être opposée à la capacité.
         const repeatDemandBySegment = computeRepeatDemandBySegment(offer.customerMemory);
-        const totalDemand = computeTotalDemand(funnel, repeatDemandBySegment);
         const capacityForOffer = remainingCapacityHours;
+        const { adjustedFunnel, allocation, contractedVolume, wonOpportunities } = integrateContractualDemand(
+          funnel,
+          repeatDemandBySegment,
+          offer,
+          capacityForOffer,
+          owned.strategicAccountOpportunities,
+        );
         const contribution = computeServiceMonth(
           { hourlyRate: offer.price, costPerLaborHour: state.costPerLaborHour, reputationScore: state.reputationScore },
-          { capacityHours: capacityForOffer, targetHours: totalDemand },
+          { capacityHours: capacityForOffer, targetHours: allocation.totalDemandIncludingContractual },
           { rng: rng.fork(`business:${owned.id}:service:${offer.id}`) },
         );
-        totalRevenue += contribution.revenue;
+        const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
+        totalRevenue += computeOfferRevenueWithContracts(contribution.revenue, offer.price, allocation, contractOutcomes);
         totalVariableCosts += contribution.variableCosts;
         remainingCapacityHours = Math.max(0, remainingCapacityHours - contribution.hoursSold);
-        const lostToCapacity = Math.max(0, totalDemand - capacityForOffer);
+        const lostToCapacity = allocation.lostToCapacity;
         demandById.set(offer.id, {
-          ...funnel,
-          demand: totalDemand,
+          ...adjustedFunnel,
+          demand: allocation.totalDemandIncludingContractual,
           capacity: capacityForOffer,
           sales: contribution.hoursSold,
           lostToCapacity,
         });
 
-        const saturationRatio = capacityForOffer > 0 ? totalDemand / capacityForOffer : totalDemand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const saturationRatio =
+          capacityForOffer > 0
+            ? allocation.totalDemandIncludingContractual / capacityForOffer
+            : allocation.totalDemandIncludingContractual > 0
+              ? Number.POSITIVE_INFINITY
+              : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
           offer,
           segments,
-          funnel,
+          adjustedFunnel,
           repeatDemandBySegment,
           deliveredExperience,
           operationalPenalty,
-          contribution.hoursSold,
-          lostToCapacity,
+          allocation.newRepeatSales,
+          allocation.newRepeatLost,
           state.reputationScore,
         );
         memoryById.set(offer.id, outcome.updatedMemory);
@@ -483,37 +585,50 @@ export function resolveBusinessMonth(
           organicWordOfMouth,
         });
         const repeatDemandBySegment = computeRepeatDemandBySegment(offer.customerMemory);
-        const totalDemand = computeTotalDemand(funnel, repeatDemandBySegment);
         const capacityForOffer = remainingCoversCapacity;
+        const { adjustedFunnel, allocation, contractedVolume, wonOpportunities } = integrateContractualDemand(
+          funnel,
+          repeatDemandBySegment,
+          offer,
+          capacityForOffer,
+          owned.strategicAccountOpportunities,
+        );
         const contribution = computeHospitalityMonth(
           { averageTicketPrice: offer.price, foodCostPerCover: state.foodCostPerCover, reputationScore: state.reputationScore },
-          { coversCapacity: capacityForOffer, expectedDemandCovers: totalDemand },
+          { coversCapacity: capacityForOffer, expectedDemandCovers: allocation.totalDemandIncludingContractual },
           { rng: rng.fork(`business:${owned.id}:hospitality:${offer.id}`) },
         );
-        totalRevenue += contribution.revenue;
+        const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
+        totalRevenue += computeOfferRevenueWithContracts(contribution.revenue, offer.price, allocation, contractOutcomes);
         totalVariableCosts += contribution.variableCosts;
         remainingCoversCapacity = Math.max(0, remainingCoversCapacity - contribution.coversServed);
-        const lostToCapacity = Math.max(0, totalDemand - capacityForOffer);
+        const lostToCapacity = allocation.lostToCapacity;
         demandById.set(offer.id, {
-          ...funnel,
-          demand: totalDemand,
+          ...adjustedFunnel,
+          demand: allocation.totalDemandIncludingContractual,
           capacity: capacityForOffer,
           sales: contribution.coversServed,
           lostToCapacity,
         });
 
-        const saturationRatio = capacityForOffer > 0 ? totalDemand / capacityForOffer : totalDemand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const saturationRatio =
+          capacityForOffer > 0
+            ? allocation.totalDemandIncludingContractual / capacityForOffer
+            : allocation.totalDemandIncludingContractual > 0
+              ? Number.POSITIVE_INFINITY
+              : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
           offer,
           segments,
-          funnel,
+          adjustedFunnel,
           repeatDemandBySegment,
           deliveredExperience,
           operationalPenalty,
-          contribution.coversServed,
-          lostToCapacity,
+          allocation.newRepeatSales,
+          allocation.newRepeatLost,
           state.reputationScore,
         );
         memoryById.set(offer.id, outcome.updatedMemory);
@@ -661,37 +776,50 @@ export function resolveBusinessMonth(
           organicWordOfMouth,
         });
         const repeatDemandBySegment = computeRepeatDemandBySegment(offer.customerMemory);
-        const totalDemand = computeTotalDemand(funnel, repeatDemandBySegment);
         const capacityForOffer = remainingCapacityUnits;
+        const { adjustedFunnel, allocation, contractedVolume, wonOpportunities } = integrateContractualDemand(
+          funnel,
+          repeatDemandBySegment,
+          offer,
+          capacityForOffer,
+          owned.strategicAccountOpportunities,
+        );
         const contribution = RetailEngine.computeMonth(
           { unitPrice: offer.price, unitCostOfGoods: state.unitCostOfGoods, reputationScore: state.reputationScore },
-          { stockUnits: capacityForOffer, expectedFootTraffic: totalDemand },
+          { stockUnits: capacityForOffer, expectedFootTraffic: allocation.totalDemandIncludingContractual },
           { rng: rng.fork(`business:${owned.id}:retail:${offer.id}`) },
         );
-        totalRevenue += contribution.revenue;
+        const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
+        totalRevenue += computeOfferRevenueWithContracts(contribution.revenue, offer.price, allocation, contractOutcomes);
         totalVariableCosts += contribution.variableCosts;
         remainingCapacityUnits = Math.max(0, remainingCapacityUnits - contribution.unitsSold);
-        const lostToCapacity = Math.max(0, totalDemand - capacityForOffer);
+        const lostToCapacity = allocation.lostToCapacity;
         demandById.set(offer.id, {
-          ...funnel,
-          demand: totalDemand,
+          ...adjustedFunnel,
+          demand: allocation.totalDemandIncludingContractual,
           capacity: capacityForOffer,
           sales: contribution.unitsSold,
           lostToCapacity,
         });
 
-        const saturationRatio = capacityForOffer > 0 ? totalDemand / capacityForOffer : totalDemand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const saturationRatio =
+          capacityForOffer > 0
+            ? allocation.totalDemandIncludingContractual / capacityForOffer
+            : allocation.totalDemandIncludingContractual > 0
+              ? Number.POSITIVE_INFINITY
+              : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
           offer,
           segments,
-          funnel,
+          adjustedFunnel,
           repeatDemandBySegment,
           deliveredExperience,
           operationalPenalty,
-          contribution.unitsSold,
-          lostToCapacity,
+          allocation.newRepeatSales,
+          allocation.newRepeatLost,
           state.reputationScore,
         );
         memoryById.set(offer.id, outcome.updatedMemory);
@@ -741,8 +869,14 @@ export function resolveBusinessMonth(
           organicWordOfMouth,
         });
         const repeatDemandBySegment = computeRepeatDemandBySegment(offer.customerMemory);
-        const totalDemand = computeTotalDemand(funnel, repeatDemandBySegment);
         const capacityForOffer = remainingCapacityMandates;
+        const { adjustedFunnel, allocation, contractedVolume, wonOpportunities } = integrateContractualDemand(
+          funnel,
+          repeatDemandBySegment,
+          offer,
+          capacityForOffer,
+          owned.strategicAccountOpportunities,
+        );
         const contribution = AgencyEngine.computeMonth(
           {
             // Corrige la limitation M11.2.1 (spec §6.2) : le prix de
@@ -753,33 +887,40 @@ export function resolveBusinessMonth(
             reputationScore: state.reputationScore,
             skillFactor: clamp(founderLeadershipSkill / 100, 0, 1),
           },
-          { capacityMandates: capacityForOffer, targetMandates: totalDemand },
+          { capacityMandates: capacityForOffer, targetMandates: allocation.totalDemandIncludingContractual },
           { rng: rng.fork(`business:${owned.id}:agency:${offer.id}`) },
         );
-        totalRevenue += contribution.revenue;
+        const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
+        totalRevenue += computeOfferRevenueWithContracts(contribution.revenue, offer.price, allocation, contractOutcomes);
         totalVariableCosts += contribution.variableCosts;
         remainingCapacityMandates = Math.max(0, remainingCapacityMandates - contribution.wonMandates);
-        const lostToCapacity = Math.max(0, totalDemand - capacityForOffer);
+        const lostToCapacity = allocation.lostToCapacity;
         demandById.set(offer.id, {
-          ...funnel,
-          demand: totalDemand,
+          ...adjustedFunnel,
+          demand: allocation.totalDemandIncludingContractual,
           capacity: capacityForOffer,
           sales: contribution.wonMandates,
           lostToCapacity,
         });
 
-        const saturationRatio = capacityForOffer > 0 ? totalDemand / capacityForOffer : totalDemand > 0 ? Number.POSITIVE_INFINITY : 0;
+        const saturationRatio =
+          capacityForOffer > 0
+            ? allocation.totalDemandIncludingContractual / capacityForOffer
+            : allocation.totalDemandIncludingContractual > 0
+              ? Number.POSITIVE_INFINITY
+              : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
           offer,
           segments,
-          funnel,
+          adjustedFunnel,
           repeatDemandBySegment,
           deliveredExperience,
           operationalPenalty,
-          contribution.wonMandates,
-          lostToCapacity,
+          allocation.newRepeatSales,
+          allocation.newRepeatLost,
           state.reputationScore,
         );
         memoryById.set(offer.id, outcome.updatedMemory);
@@ -871,7 +1012,14 @@ export function resolveBusinessMonth(
   const { business, outcome } = applyMonthlyCashFlow(businessBeforeCashFlow, statement);
 
   return {
-    updated: { ...owned, business, workforce: headcountResult.workforce, familyState, lastStatement: statement },
+    updated: {
+      ...owned,
+      business,
+      workforce: headcountResult.workforce,
+      familyState,
+      lastStatement: statement,
+      strategicAccountOpportunities: Array.from(opportunitiesById.values()),
+    },
     statement,
     outcome,
     hired: headcountResult.hired,
