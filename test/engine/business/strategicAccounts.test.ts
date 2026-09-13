@@ -10,6 +10,7 @@ import {
   computeContractedVolumeForOffer,
   computeContractualCapacityAllocation,
   computeContractualDemandAdjustment,
+  deriveRenewalBudget,
   deriveTrueOpportunityBudget,
   findEligibleStrategicAccountSlots,
   resolveAccountNegotiationDecision,
@@ -265,7 +266,15 @@ describe("resolveAccountNegotiationDecision (spec M11.2.4.2 §8)", () => {
     };
     const result = resolveAccountNegotiationDecision(opp, "agency", { action: "propose", proposal }, DATE);
     expect(result.status).toBe("won");
-    expect(result.contract).toEqual({ ...proposal, monthsRemaining: 6, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 });
+    expect(result.contract).toEqual({
+      ...proposal,
+      monthsRemaining: 6,
+      signedAt: DATE,
+      lastMonthServedVolume: 0,
+      lastMonthUnservedVolume: 0,
+      renewalProposal: null,
+      renewalDeadlineMonthsRemaining: null,
+    });
     expect(result.lastAccountProposal).toBeNull();
   });
 
@@ -380,7 +389,18 @@ describe("computeContractedVolumeForOffer / wonOpportunitiesForOffer (spec M11.2
       id,
       offerId,
       status: "won",
-      contract: { price: 100, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining: 6, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 },
+      contract: {
+        price: 100,
+        volume,
+        qualityCommitment: 60,
+        durationMonths: 6,
+        monthsRemaining: 6,
+        signedAt: DATE,
+        lastMonthServedVolume: 0,
+        lastMonthUnservedVolume: 0,
+        renewalProposal: null,
+        renewalDeadlineMonthsRemaining: null,
+      },
     });
 
   it("somme le volume contracté uniquement des opportunités 'won' de l'offre visée", () => {
@@ -469,7 +489,18 @@ describe("allocateContractOutcomes (spec M11.2.4 §10)", () => {
       makeOpportunity({
         id,
         status: "won",
-        contract: { price, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining: 6, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 },
+        contract: {
+          price,
+          volume,
+          qualityCommitment: 60,
+          durationMonths: 6,
+          monthsRemaining: 6,
+          signedAt: DATE,
+          lastMonthServedVolume: 0,
+          lastMonthUnservedVolume: 0,
+          renewalProposal: null,
+          renewalDeadlineMonthsRemaining: null,
+        },
       });
     const outcomes = allocateContractOutcomes([opp("a", 30, 100), opp("b", 70, 200)], 50, 10, 100);
     expect(outcomes[0]!.servedVolume).toBeCloseTo(15); // 50 * 30/100
@@ -480,5 +511,63 @@ describe("allocateContractOutcomes (spec M11.2.4 §10)", () => {
   });
   it("contractedVolume nul -> tableau vide, jamais une division par zéro", () => {
     expect(allocateContractOutcomes([], 0, 0, 0)).toEqual([]);
+  });
+});
+
+describe("deriveRenewalBudget (spec M11.2.4.5 §11-§12 — rapport de force composé facteur par facteur)", () => {
+  const NEUTRAL = { opportunityId: "opp-1", referencePrice: REFERENCE_PRICE, trust: 0.5, concentration: 0, reputationScore: 0, competitivePressure: 0 };
+
+  it("est déterministe : mêmes paramètres -> même résultat", () => {
+    expect(deriveRenewalBudget(NEUTRAL)).toEqual(deriveRenewalBudget(NEUTRAL));
+  });
+
+  it("indépendant de deriveTrueOpportunityBudget (graine distincte, pas de corrélation triviale)", () => {
+    const renewal = deriveRenewalBudget(NEUTRAL);
+    const initial = deriveTrueOpportunityBudget("opp-1", REFERENCE_PRICE);
+    expect(renewal.maxAcceptablePrice).not.toBe(initial.maxAcceptablePrice);
+  });
+
+  it("confiance haute -> maxAcceptablePrice strictement plus haut (toutes choses égales par ailleurs)", () => {
+    const low = deriveRenewalBudget({ ...NEUTRAL, trust: 0 });
+    const high = deriveRenewalBudget({ ...NEUTRAL, trust: 1 });
+    expect(high.maxAcceptablePrice).toBeGreaterThan(low.maxAcceptablePrice);
+    expect(high.minAcceptableQuality).toBeLessThan(low.minAcceptableQuality);
+  });
+
+  it("concentration haute -> maxAcceptablePrice strictement plus bas ET minAcceptableQuality plus haut", () => {
+    const low = deriveRenewalBudget({ ...NEUTRAL, concentration: 0 });
+    const high = deriveRenewalBudget({ ...NEUTRAL, concentration: 1 });
+    expect(high.maxAcceptablePrice).toBeLessThan(low.maxAcceptablePrice);
+    expect(high.minAcceptableQuality).toBeGreaterThan(low.minAcceptableQuality);
+  });
+
+  it("réputation haute -> maxAcceptablePrice strictement plus haut", () => {
+    const low = deriveRenewalBudget({ ...NEUTRAL, reputationScore: 0 });
+    const high = deriveRenewalBudget({ ...NEUTRAL, reputationScore: 1 });
+    expect(high.maxAcceptablePrice).toBeGreaterThan(low.maxAcceptablePrice);
+  });
+
+  it("pression concurrentielle haute -> maxAcceptablePrice strictement plus bas ET minAcceptableQuality plus haut", () => {
+    const low = deriveRenewalBudget({ ...NEUTRAL, competitivePressure: 0 });
+    const high = deriveRenewalBudget({ ...NEUTRAL, competitivePressure: 1 });
+    expect(high.maxAcceptablePrice).toBeLessThan(low.maxAcceptablePrice);
+    expect(high.minAcceptableQuality).toBeGreaterThan(low.minAcceptableQuality);
+  });
+
+  it("expectedVolume n'est affecté par aucun facteur (aucun lien spécifié entre volume et pouvoir de négociation)", () => {
+    const neutral = deriveRenewalBudget(NEUTRAL);
+    const allFactorsMax = deriveRenewalBudget({ ...NEUTRAL, trust: 1, concentration: 1, reputationScore: 1, competitivePressure: 1 });
+    expect(allFactorsMax.expectedVolume).toBe(neutral.expectedVolume);
+  });
+
+  it("les bornes ne sont jamais dépassées même à facteurs cumulés extrêmes", () => {
+    const allMax = deriveRenewalBudget({ ...NEUTRAL, trust: 1, concentration: 1, reputationScore: 1, competitivePressure: 1 });
+    const allMin = deriveRenewalBudget({ ...NEUTRAL, trust: 0, concentration: 1, reputationScore: 0, competitivePressure: 1 });
+    for (const result of [allMax, allMin]) {
+      expect(result.maxAcceptablePrice).toBeGreaterThanOrEqual(REFERENCE_PRICE * 0.4);
+      expect(result.maxAcceptablePrice).toBeLessThanOrEqual(REFERENCE_PRICE * 3);
+      expect(result.minAcceptableQuality).toBeGreaterThanOrEqual(0);
+      expect(result.minAcceptableQuality).toBeLessThanOrEqual(100);
+    }
   });
 });

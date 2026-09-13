@@ -700,7 +700,18 @@ describe("Contract Execution — intégration réelle (spec M11.2.4.3)", () => {
         qualityCommitment: { value: 60, uncertainty: 0 },
       },
       lastAccountProposal: null,
-      contract: { price, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 },
+      contract: {
+        price,
+        volume,
+        qualityCommitment: 60,
+        durationMonths: 6,
+        monthsRemaining,
+        signedAt: DATE,
+        lastMonthServedVolume: 0,
+        lastMonthUnservedVolume: 0,
+        renewalProposal: null,
+        renewalDeadlineMonthsRemaining: null,
+      },
       relationship: null,
     };
   }
@@ -875,7 +886,18 @@ describe("Contract Execution — Subscription (spec M11.2.4.3 décision 7 : volu
         qualityCommitment: { value: 60, uncertainty: 0 },
       },
       lastAccountProposal: null,
-      contract: { price, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 },
+      contract: {
+        price,
+        volume,
+        qualityCommitment: 60,
+        durationMonths: 6,
+        monthsRemaining,
+        signedAt: DATE,
+        lastMonthServedVolume: 0,
+        lastMonthUnservedVolume: 0,
+        renewalProposal: null,
+        renewalDeadlineMonthsRemaining: null,
+      },
       relationship: null,
     };
   }

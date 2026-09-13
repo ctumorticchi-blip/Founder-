@@ -44,6 +44,8 @@ function makeContract(overrides: Partial<AccountContract> = {}): AccountContract
     signedAt: DATE,
     lastMonthServedVolume: 40,
     lastMonthUnservedVolume: 0,
+    renewalProposal: null,
+    renewalDeadlineMonthsRemaining: null,
     ...overrides,
   };
 }

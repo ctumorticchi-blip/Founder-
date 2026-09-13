@@ -86,6 +86,69 @@ export function deriveTrueOpportunityBudget(
   };
 }
 
+/** Nombre de mois avant départ automatique si un renouvellement en attente n'est jamais résolu (spec M11.2.4.5 §12) — calibrage empirique. */
+export const RENEWAL_GRACE_PERIOD_MONTHS = 3;
+
+/** Un client confiant est moins enclin à négocier âprement (spec §9, §11) — relève `maxAcceptablePrice`, abaisse légèrement `minAcceptableQuality`. */
+export const TRUST_PRICE_LENIENCY = 0.3;
+/** Un compte qui pèse lourd dans le CA (spec §10) sait qu'il a du pouvoir — abaisse `maxAcceptablePrice`, relève `minAcceptableQuality`. */
+export const CONCENTRATION_PRICE_PRESSURE = 0.2;
+/** Une entreprise réputée négocie en meilleure position (spec §11, tableau). */
+export const REPUTATION_PRICE_BONUS = 0.1;
+/** Plus le marché offre d'alternatives déjà captées par la concurrence agrégée (proxy explicite, spec §18.1), plus le client négocie dur. */
+export const COMPETITION_PRICE_PRESSURE = 0.25;
+
+/**
+ * Vraie proposition de renouvellement du CLIENT (spec M11.2.4.5 §11-§12)
+ * — jamais une équation unique opaque (spec §19.1) : une graine de base
+ * indépendante de la négociation initiale (`deriveTrueOpportunityBudget`),
+ * puis 4 AJUSTEMENTS BORNÉS et NOMMÉS individuellement, appliqués dans
+ * l'ordre, chacun testable isolément. `expectedVolume` n'est affecté par
+ * aucun facteur (aucun élément du tableau §11 ne relie volume et pouvoir
+ * de négociation). Pure, déterministe.
+ */
+export function deriveRenewalBudget(params: {
+  readonly opportunityId: string;
+  readonly referencePrice: number;
+  readonly trust: number;
+  readonly concentration: number;
+  readonly reputationScore: number;
+  readonly competitivePressure: number;
+}): {
+  readonly maxAcceptablePrice: number;
+  readonly expectedVolume: number;
+  readonly minAcceptableQuality: number;
+} {
+  const { opportunityId, referencePrice, trust, concentration, reputationScore, competitivePressure } = params;
+  const rng = createRng(deriveSeed(0, "strategic-account-renewal-budget", opportunityId));
+  const baseMaxAcceptablePrice = referencePrice * rng.nextFloat(0.9, 1.5);
+  const baseExpectedVolume = rng.nextFloat(20, 80);
+  const baseMinAcceptableQuality = rng.nextFloat(50, 80);
+
+  const clampedTrust = clamp(trust, 0, 1);
+  const clampedConcentration = clamp(concentration, 0, 1);
+  const clampedReputation = clamp(reputationScore, 0, 1);
+  const clampedCompetitivePressure = clamp(competitivePressure, 0, 1);
+
+  const priceLeniency = 1 + (clampedTrust - 0.5) * TRUST_PRICE_LENIENCY;
+  const concentrationPricePressure = 1 - clampedConcentration * CONCENTRATION_PRICE_PRESSURE;
+  const reputationBonus = 1 + clampedReputation * REPUTATION_PRICE_BONUS;
+  const competitionPricePressure = 1 - clampedCompetitivePressure * COMPETITION_PRICE_PRESSURE;
+  const maxAcceptablePrice = clamp(
+    baseMaxAcceptablePrice * priceLeniency * concentrationPricePressure * reputationBonus * competitionPricePressure,
+    referencePrice * 0.4,
+    referencePrice * 3,
+  );
+
+  // Symétrique côté qualité : confiance -> plus indulgent, concentration/concurrence -> plus exigeant.
+  const trustQualityLeniency = -(clampedTrust - 0.5) * 10;
+  const concentrationQualityPressure = clampedConcentration * 10;
+  const competitionQualityPressure = clampedCompetitivePressure * 10;
+  const minAcceptableQuality = clamp(baseMinAcceptableQuality + trustQualityLeniency + concentrationQualityPressure + competitionQualityPressure, 0, 100);
+
+  return { maxAcceptablePrice, expectedVolume: baseExpectedVolume, minAcceptableQuality };
+}
+
 /**
  * Vue imparfaite du budget réel (spec §7) : réutilise `estimate()`
  * (`intelligence.ts`, patron Truth/PlayerView déjà éprouvé) — le nombre
@@ -185,6 +248,8 @@ function signContract(opportunity: StrategicAccountOpportunity, proposal: Accoun
       signedAt: date,
       lastMonthServedVolume: 0,
       lastMonthUnservedVolume: 0,
+      renewalProposal: null,
+      renewalDeadlineMonthsRemaining: null,
     },
     relationship: null,
   };

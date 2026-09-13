@@ -17,6 +17,8 @@ const MEMORABLE_EVENT_KINDS: ReadonlySet<GameEventKind> = new Set([
   "business-listed-for-sale",
   "sale-offer-received",
   "business-sold",
+  "strategic-account-renewed",
+  "strategic-account-lost",
 ]);
 
 /**

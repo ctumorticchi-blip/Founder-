@@ -57,6 +57,15 @@ export interface AccountContract {
   /** Volume RÉELLEMENT livré/perdu le mois dernier (spec M11.2.4.3 §5) — `0` par défaut à la signature, jamais mesuré avant l'intégration économique (M11.2.4.3). */
   readonly lastMonthServedVolume: number;
   readonly lastMonthUnservedVolume: number;
+  /**
+   * Proposition de renouvellement du CLIENT en attente (spec M11.2.4.5
+   * §11-§12) — `null` hors renouvellement. Posée par le moteur quand
+   * `monthsRemaining` atteint 0 (c'est le client qui ouvre le
+   * renouvellement, jamais le joueur en premier).
+   */
+  readonly renewalProposal: AccountProposal | null;
+  /** Compte à rebours avant départ automatique si le renouvellement n'est pas résolu (spec §12) — `null` hors renouvellement. */
+  readonly renewalDeadlineMonthsRemaining: number | null;
 }
 
 /**

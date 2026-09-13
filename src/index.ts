@@ -179,10 +179,15 @@ export {
   computeAccountRelationshipUpdate,
 } from "./engine/business/accountRelationship.js";
 export {
+  COMPETITION_PRICE_PRESSURE,
+  CONCENTRATION_PRICE_PRESSURE,
   MAX_ACTIVE_STRATEGIC_ACCOUNT_OPPORTUNITIES_PER_BUSINESS,
   MAX_RESEARCH_HOURS_FOR_FULL_CONFIDENCE,
   NEGOTIATION_PRICE_TOLERANCE,
+  RENEWAL_GRACE_PERIOD_MONTHS,
+  REPUTATION_PRICE_BONUS,
   STRATEGIC_ACCOUNT_OPPORTUNITY_MONTHLY_PROBABILITY,
+  TRUST_PRICE_LENIENCY,
   advanceStrategicAccountOpportunities,
   allocateContractOutcomes,
   applyResearchHours,
@@ -191,6 +196,7 @@ export {
   computeContractedVolumeForOffer,
   computeContractualCapacityAllocation,
   computeContractualDemandAdjustment,
+  deriveRenewalBudget,
   deriveTrueOpportunityBudget,
   findEligibleStrategicAccountSlots,
   resolveAccountNegotiationDecision,

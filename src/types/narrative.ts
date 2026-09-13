@@ -18,7 +18,9 @@ export type GameEventKind =
   | "property-purchased"
   | "business-listed-for-sale"
   | "sale-offer-received"
-  | "business-sold";
+  | "business-sold"
+  | "strategic-account-renewed"
+  | "strategic-account-lost";
 
 /** Événement du mois courant (transitoire : renvoyé par simulateMonth, pas nécessairement mémorisé). */
 export interface GameEvent {

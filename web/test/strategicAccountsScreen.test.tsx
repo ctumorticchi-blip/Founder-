@@ -273,6 +273,8 @@ describe("Strategic Accounts — Relationship & Concentration (spec M11.2.4.4 §
         signedAt: save.gameState.date,
         lastMonthServedVolume: 40,
         lastMonthUnservedVolume: 0,
+        renewalProposal: null,
+        renewalDeadlineMonthsRemaining: null,
       },
       relationship: {
         satisfaction: { scoreThisMonth: 82, smoothedScore: 82, diagnosisThisMonth: null },
@@ -346,6 +348,8 @@ describe("Strategic Accounts — Relationship & Concentration (spec M11.2.4.4 §
         signedAt: save.gameState.date,
         lastMonthServedVolume: 0,
         lastMonthUnservedVolume: 0,
+        renewalProposal: null,
+        renewalDeadlineMonthsRemaining: null,
       },
       relationship: null,
     };
