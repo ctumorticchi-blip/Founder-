@@ -147,6 +147,11 @@ function migrateStrategicAccountOpportunity(opportunity: StrategicAccountOpportu
     lastAccountProposal: opportunity.lastAccountProposal ?? null,
     contract: opportunity.contract ? migrateAccountContract(opportunity.contract) : null,
     budgetEstimate: opportunity.budgetEstimate ?? computeBudgetEstimate(opportunity.id, referencePrice, researchHoursInvested),
+    // Complète une opportunité signée antérieure à M11.2.4.4 (spec §9) —
+    // jamais un historique de relation fabriqué : `null` signifie "aucun
+    // mois encore résolu sous ce contrat", cohérent avec l'état initial
+    // produit par le moteur à la signature.
+    relationship: opportunity.relationship ?? null,
   };
 }
 
