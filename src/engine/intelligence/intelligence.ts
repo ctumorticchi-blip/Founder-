@@ -22,7 +22,7 @@ function relativeNoiseFor(skillAverage0To100: number): number {
   return MAX_RELATIVE_NOISE - skillFactor * (MAX_RELATIVE_NOISE - MIN_RELATIVE_NOISE);
 }
 
-function estimate(trueValue: number, skillAverage0To100: number, rng: Rng): Estimate {
+export function estimate(trueValue: number, skillAverage0To100: number, rng: Rng): Estimate {
   const stdDev = Math.abs(trueValue) * relativeNoiseFor(skillAverage0To100);
   const noisyValue = trueValue + rng.nextGaussian(0, stdDev);
   return { value: noisyValue, uncertainty: stdDev };

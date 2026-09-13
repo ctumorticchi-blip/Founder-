@@ -1,11 +1,20 @@
 import type { Rng } from "../rng/rng.js";
+import { createRng, deriveSeed } from "../rng/rng.js";
 import type { GameDate } from "../time/clock.js";
 import { toMonthIndex } from "../time/clock.js";
+import { clamp } from "../util/math.js";
 import { getMarketSegments } from "../market/segments.js";
+import { estimate } from "../intelligence/intelligence.js";
 import { generateStrategicAccountIdentity } from "./strategicAccountIdentity.js";
 import type { EconomicFamily } from "../../types/business.js";
 import type { Offer } from "../../types/offer.js";
-import type { StrategicAccountOpportunity, StrategicAccountOpportunitySource } from "../../types/strategicAccount.js";
+import type {
+  AccountNegotiationDecision,
+  AccountProposal,
+  StrategicAccountAction,
+  StrategicAccountOpportunity,
+  StrategicAccountOpportunitySource,
+} from "../../types/strategicAccount.js";
 
 /** Probabilité, PAR slot éligible ET PAR MOIS, qu'une nouvelle opportunité apparaisse (calibrage empirique, comme `sale.ts`). */
 export const STRATEGIC_ACCOUNT_OPPORTUNITY_MONTHLY_PROBABILITY = 0.06;
@@ -47,6 +56,58 @@ export function findEligibleStrategicAccountSlots(offers: readonly Offer[], fami
   return slots;
 }
 
+/** Nombre d'heures de recherche au-delà duquel l'incertitude atteint son plancher (spec M11.2.4.2 §7). */
+export const MAX_RESEARCH_HOURS_FOR_FULL_CONFIDENCE = 40;
+
+function referencePriceFor(segmentId: string, family: EconomicFamily): number {
+  return getMarketSegments(family).find((segment) => segment.id === segmentId)?.referencePrice ?? 0;
+}
+
+/**
+ * Budget/attentes RÉELS du compte (spec M11.2.4.2 §8) — jamais persisté,
+ * dérivé à la demande depuis l'id de l'opportunité (stable) et le prix de
+ * référence de son segment : même id + même prix -> même budget, toujours.
+ * Connu EXACTEMENT par le moteur pour résoudre une négociation ; le
+ * joueur n'en a jamais qu'une vue bruitée (`computeBudgetEstimate`).
+ */
+export function deriveTrueOpportunityBudget(
+  opportunityId: string,
+  referencePrice: number,
+): {
+  readonly maxAcceptablePrice: number;
+  readonly expectedVolume: number;
+  readonly minAcceptableQuality: number;
+} {
+  const rng = createRng(deriveSeed(0, "strategic-account-budget", opportunityId));
+  return {
+    maxAcceptablePrice: referencePrice * rng.nextFloat(0.9, 1.5),
+    expectedVolume: rng.nextFloat(20, 80),
+    minAcceptableQuality: rng.nextFloat(50, 80),
+  };
+}
+
+/**
+ * Vue imparfaite du budget réel (spec §7) : réutilise `estimate()`
+ * (`intelligence.ts`, patron Truth/PlayerView déjà éprouvé) — le nombre
+ * d'heures de recherche investies fait office de "compétence équivalente"
+ * 0-100, aucune nouvelle courbe de bruit inventée. Déterministe pour un
+ * couple (id, heures) donné — jamais dépendant du RNG mensuel de fond.
+ */
+export function computeBudgetEstimate(
+  opportunityId: string,
+  referencePrice: number,
+  researchHoursInvested: number,
+): StrategicAccountOpportunity["budgetEstimate"] {
+  const truth = deriveTrueOpportunityBudget(opportunityId, referencePrice);
+  const confidenceEquivalent = clamp((researchHoursInvested / MAX_RESEARCH_HOURS_FOR_FULL_CONFIDENCE) * 100, 0, 100);
+  const rng = createRng(deriveSeed(0, "strategic-account-estimate", opportunityId));
+  return {
+    price: estimate(truth.maxAcceptablePrice, confidenceEquivalent, rng.fork("price")),
+    volume: estimate(truth.expectedVolume, confidenceEquivalent, rng.fork("volume")),
+    qualityCommitment: estimate(truth.minAcceptableQuality, confidenceEquivalent, rng.fork("quality")),
+  };
+}
+
 /** Nombre d'opportunités encore activement à l'étude (seul "researching" compte pour le plafond — aucun autre statut n'est jamais produit avant M11.2.4.2). */
 function countActiveOpportunities(opportunities: readonly StrategicAccountOpportunity[]): number {
   return opportunities.filter((o) => o.status === "researching").length;
@@ -83,8 +144,9 @@ export function advanceStrategicAccountOpportunities(params: {
 
     const identity = generateStrategicAccountIdentity(slotRng.fork("identity"));
     const source = slotRng.fork("source").pick(OPPORTUNITY_SOURCES);
+    const id = `${businessId}:${slot.offerId}:${slot.segmentId}:${toMonthIndex(date)}`;
     created.push({
-      id: `${businessId}:${slot.offerId}:${slot.segmentId}:${toMonthIndex(date)}`,
+      id,
       businessId,
       offerId: slot.offerId,
       segmentId: slot.segmentId,
@@ -94,9 +156,128 @@ export function advanceStrategicAccountOpportunities(params: {
       source,
       discoveredAt: date,
       status: "researching",
+      researchHoursInvested: 0,
+      budgetEstimate: computeBudgetEstimate(id, referencePriceFor(slot.segmentId, family), 0),
+      lastAccountProposal: null,
+      contract: null,
     });
     active += 1;
   }
 
   return created.length === 0 ? existingOpportunities : [...existingOpportunities, ...created];
+}
+
+/** Tolérance de prix pour l'acceptation d'une proposition (spec M11.2.4.2 §8) : accepte tout prix <= budget réel × ce facteur, jamais un jet de probabilité. */
+export const NEGOTIATION_PRICE_TOLERANCE = 1.0;
+
+function signContract(opportunity: StrategicAccountOpportunity, proposal: AccountProposal, date: GameDate): StrategicAccountOpportunity {
+  return {
+    ...opportunity,
+    status: "won",
+    lastAccountProposal: null,
+    contract: {
+      price: proposal.price,
+      volume: proposal.volume,
+      qualityCommitment: proposal.qualityCommitment,
+      durationMonths: proposal.durationMonths,
+      monthsRemaining: proposal.durationMonths,
+      signedAt: date,
+    },
+  };
+}
+
+/**
+ * Résout une décision de négociation (spec M11.2.4.2 §8) : la RÉSOLUTION
+ * d'une proposition donnée est TOUJOURS un calcul déterministe contre le
+ * budget réel du compte (`deriveTrueOpportunityBudget`) — jamais un jet
+ * de probabilité sur l'issue elle-même (seule l'arrivée d'une opportunité,
+ * M11.2.4.1, reste stochastique-seedée). Fonction pure.
+ */
+export function resolveAccountNegotiationDecision(
+  opportunity: StrategicAccountOpportunity,
+  family: EconomicFamily,
+  decision: AccountNegotiationDecision,
+  date: GameDate,
+): StrategicAccountOpportunity {
+  if (opportunity.status !== "researching" && opportunity.status !== "negotiating") {
+    throw new RangeError(
+      `resolveAccountNegotiationDecision: "${opportunity.id}" au statut "${opportunity.status}", négociation impossible.`,
+    );
+  }
+  if (decision.action === "withdraw") {
+    return { ...opportunity, status: "declined-by-player", lastAccountProposal: null };
+  }
+  if (decision.action === "accept") {
+    if (!opportunity.lastAccountProposal) {
+      throw new RangeError(`resolveAccountNegotiationDecision: aucune contre-proposition à accepter pour "${opportunity.id}".`);
+    }
+    return signContract(opportunity, opportunity.lastAccountProposal, date);
+  }
+
+  const referencePrice = referencePriceFor(opportunity.segmentId, family);
+  const budget = deriveTrueOpportunityBudget(opportunity.id, referencePrice);
+  const { proposal } = decision;
+  const accepted = proposal.price <= budget.maxAcceptablePrice * NEGOTIATION_PRICE_TOLERANCE && proposal.qualityCommitment >= budget.minAcceptableQuality;
+  if (accepted) return signContract(opportunity, proposal, date);
+
+  return {
+    ...opportunity,
+    status: "negotiating",
+    lastAccountProposal: {
+      price: budget.maxAcceptablePrice,
+      volume: budget.expectedVolume,
+      qualityCommitment: budget.minAcceptableQuality,
+      durationMonths: proposal.durationMonths,
+    },
+  };
+}
+
+/** Investit des heures de recherche sur une opportunité (spec §6, §7) : accumule, raffraîchit l'estimation. No-op sur un statut terminal. */
+export function applyResearchHours(opportunity: StrategicAccountOpportunity, hours: number, family: EconomicFamily): StrategicAccountOpportunity {
+  if (hours < 0) {
+    throw new RangeError(`applyResearchHours: hours=${hours} doit être >= 0.`);
+  }
+  if (opportunity.status !== "researching" && opportunity.status !== "negotiating") {
+    return opportunity;
+  }
+  const researchHoursInvested = opportunity.researchHoursInvested + hours;
+  const referencePrice = referencePriceFor(opportunity.segmentId, family);
+  return {
+    ...opportunity,
+    researchHoursInvested,
+    budgetEstimate: computeBudgetEstimate(opportunity.id, referencePrice, researchHoursInvested),
+  };
+}
+
+/**
+ * Applique une série d'actions joueur (temps investi/négociation) sur une
+ * liste d'opportunités (spec §6, §8) — une par une, dans l'ordre fourni,
+ * jamais de résimulation ni de RNG (déjà résolu dans les fonctions pures
+ * appelées ici).
+ */
+export function applyStrategicAccountActions(
+  opportunities: readonly StrategicAccountOpportunity[],
+  actions: readonly StrategicAccountAction[],
+  family: EconomicFamily,
+  date: GameDate,
+): readonly StrategicAccountOpportunity[] {
+  let result = opportunities;
+  for (const action of actions) {
+    const index = result.findIndex((o) => o.id === action.opportunityId);
+    if (index === -1) {
+      throw new RangeError(`applyStrategicAccountActions: opportunité "${action.opportunityId}" introuvable.`);
+    }
+    const opportunity = result[index]!;
+    const updated =
+      action.kind === "invest-time"
+        ? applyResearchHours(opportunity, action.hours, family)
+        : resolveAccountNegotiationDecision(
+            opportunity,
+            family,
+            action.kind === "accept" || action.kind === "withdraw" ? { action: action.kind } : { action: action.kind, proposal: action.proposal },
+            date,
+          );
+    result = result.map((o, i) => (i === index ? updated : o));
+  }
+  return result;
 }

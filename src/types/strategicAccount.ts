@@ -1,4 +1,5 @@
 import type { GameDate } from "../engine/time/clock.js";
+import type { Estimate } from "./intelligence.js";
 
 /**
  * Source d'une opportunité de compte stratégique (spec M11.2.4 §5,
@@ -15,7 +16,59 @@ export type StrategicAccountOpportunitySource = "prospecting" | "network" | "ref
  */
 export type StrategicAccountOpportunityStatus = "researching" | "negotiating" | "won" | "lost" | "declined-by-player";
 
-/** Une piste de grand compte identifiée pour une offre/segment donnés (spec §5). */
+/**
+ * Une proposition contractuelle échangée pendant une négociation (spec
+ * §8) — objet extensible, jamais une union figée de scalaires
+ * positionnels (un futur champ, ex. clause d'exclusivité, s'ajoutera
+ * sans rupture).
+ */
+export interface AccountProposal {
+  readonly price: number;
+  readonly volume: number;
+  readonly qualityCommitment: number;
+  readonly durationMonths: number;
+}
+
+/**
+ * Décision du joueur pendant une négociation (spec §8). La résolution
+ * d'une décision donnée est TOUJOURS déterministe (`resolveAccountNegotiationDecision`,
+ * `strategicAccounts.ts`) — seule l'ARRIVÉE d'une opportunité reste
+ * stochastique-seedée (M11.2.4.1), jamais l'issue d'une négociation déjà
+ * engagée.
+ */
+export type AccountNegotiationDecision =
+  | { readonly action: "propose"; readonly proposal: AccountProposal }
+  | { readonly action: "accept" }
+  | { readonly action: "counter"; readonly proposal: AccountProposal }
+  | { readonly action: "withdraw" };
+
+/**
+ * Contrat signé (spec §5, §8) — "papier" tant que M11.2.4.3 n'existe pas :
+ * aucun effet sur `businessResolution.ts` avant ce jalon (spec §15).
+ */
+export interface AccountContract {
+  readonly price: number;
+  readonly volume: number;
+  readonly qualityCommitment: number;
+  readonly durationMonths: number;
+  readonly monthsRemaining: number;
+  readonly signedAt: GameDate;
+}
+
+/** Action du joueur sur une opportunité de compte stratégique, ce mois-ci (spec §6, §8). */
+export type StrategicAccountAction =
+  | { readonly kind: "invest-time"; readonly opportunityId: string; readonly hours: number }
+  | { readonly kind: "propose"; readonly opportunityId: string; readonly proposal: AccountProposal }
+  | { readonly kind: "accept"; readonly opportunityId: string }
+  | { readonly kind: "counter"; readonly opportunityId: string; readonly proposal: AccountProposal }
+  | { readonly kind: "withdraw"; readonly opportunityId: string };
+
+/**
+ * Une piste de grand compte identifiée pour une offre/segment donnés
+ * (spec §5). `"lost"` n'est produit par aucune fonction de M11.2.4.1/
+ * M11.2.4.2 — réservé à une future issue (ex. abandon du compte après
+ * une négociation dans l'impasse), rien ne le lit ni ne l'écrit encore.
+ */
 export interface StrategicAccountOpportunity {
   readonly id: string;
   readonly businessId: string;
@@ -28,6 +81,18 @@ export interface StrategicAccountOpportunity {
   readonly source: StrategicAccountOpportunitySource;
   readonly discoveredAt: GameDate;
   readonly status: StrategicAccountOpportunityStatus;
+  /** Heures cumulées investies à étudier cette opportunité (spec §6) — réduit `budgetEstimate.uncertainty`. */
+  readonly researchHoursInvested: number;
+  /** Vue imparfaite du budget/attentes réels du compte (spec §7) — jamais la vérité brute, toujours une fourchette. */
+  readonly budgetEstimate: {
+    readonly price: Estimate;
+    readonly volume: Estimate;
+    readonly qualityCommitment: Estimate;
+  };
+  /** Dernière contre-proposition émise par le compte, `null` hors négociation active. */
+  readonly lastAccountProposal: AccountProposal | null;
+  /** Rempli uniquement quand `status === "won"`. */
+  readonly contract: AccountContract | null;
 }
 
 /**

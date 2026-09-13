@@ -156,8 +156,12 @@ export {
 
 export type { CustomerSegment } from "./types/customerSegment.js";
 export type {
+  AccountContract,
+  AccountNegotiationDecision,
   AccountOfferRelationship,
+  AccountProposal,
   StrategicAccount,
+  StrategicAccountAction,
   StrategicAccountOpportunity,
   StrategicAccountOpportunitySource,
   StrategicAccountOpportunityStatus,
@@ -166,9 +170,16 @@ export type { StrategicAccountIdentity } from "./engine/business/strategicAccoun
 export { generateStrategicAccountIdentity } from "./engine/business/strategicAccountIdentity.js";
 export {
   MAX_ACTIVE_STRATEGIC_ACCOUNT_OPPORTUNITIES_PER_BUSINESS,
+  MAX_RESEARCH_HOURS_FOR_FULL_CONFIDENCE,
+  NEGOTIATION_PRICE_TOLERANCE,
   STRATEGIC_ACCOUNT_OPPORTUNITY_MONTHLY_PROBABILITY,
   advanceStrategicAccountOpportunities,
+  applyResearchHours,
+  applyStrategicAccountActions,
+  computeBudgetEstimate,
+  deriveTrueOpportunityBudget,
   findEligibleStrategicAccountSlots,
+  resolveAccountNegotiationDecision,
   type StrategicAccountSlot,
 } from "./engine/business/strategicAccounts.js";
 export type {
