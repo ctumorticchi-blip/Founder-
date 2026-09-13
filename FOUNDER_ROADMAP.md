@@ -42,15 +42,20 @@ mobile-first.
   différenciées, concentration réelle affichée, playtest mobile réel
   confirmant la dégradation de confiance sur sous-livraison répétée).
   Voir `FOUNDER_STATE.md` pour le détail.
+- M11.2.4.5 — Renewal & Loss : implémenté et vérifié (6 tâches TDD,
+  suite complète verte, rapport de force composé facteur par facteur
+  (`deriveRenewalBudget`), cycle accept/counter/withdraw réutilisé sans
+  modification, départ réel après délai de grâce libérant réellement la
+  capacité, playtest mobile réel confirmant le déclenchement de la
+  proposition de renouvellement, son acceptation, et le départ réel
+  d'un second compte après délai de grâce écoulé). Voir
+  `FOUNDER_STATE.md` pour le détail. **M11.2.4 — Strategic Accounts est
+  désormais intégralement livré (5/5 sous-jalons).**
 
-## Actif — Strategic Accounts (M11.2.4)
+## Actif
 
-1. ~~**M11.2.4.1 — Strategic Account Core**~~ — terminé.
-2. ~~**M11.2.4.2 — Prospecting & Negotiation**~~ — terminé.
-3. ~~**M11.2.4.3 — Contract Execution**~~ — terminé.
-4. ~~**M11.2.4.4 — Relationship & Concentration**~~ — terminé.
-5. **M11.2.4.5 — Renewal & Loss** — pouvoir de négociation, renouvellement
-   dynamique, départ réel d'un compte, narration causale.
+Aucun sous-jalon en cours — voir « Ensuite » pour la prochaine action
+autonome.
 
 ## Ensuite
 

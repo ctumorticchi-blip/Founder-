@@ -10,8 +10,9 @@ aveuglément.
 Branche : `claude/founder-web-game-4v4xga` (branche de développement
 désignée pour cette session — voir note ci-dessous).
 Dernier commit vérifié au moment de la rédaction de cette version :
-`53c876f` — M11.2.4.4 (Relationship & Concentration) intégralement
-livré et vert.
+`e77cd4d` — M11.2.4.5 (Renewal & Loss) intégralement livré et vert.
+**M11.2.4 — Strategic Accounts est désormais intégralement terminé
+(5/5 sous-jalons livrés).**
 
 **Note d'infrastructure** : cette session développe sur la branche
 `claude/founder-web-game-4v4xga` (imposée par l'environnement
@@ -24,8 +25,8 @@ avant de continuer.
 
 ## Milestone actif
 
-**M11.2.4.4 — Relationship & Concentration : TERMINÉ.**
-Prochain milestone à démarrer : **M11.2.4.5 — Renewal & Loss**
+**M11.2.4 — Strategic Accounts : TERMINÉ (5/5 sous-jalons).**
+Prochain milestone à démarrer : **M11.2.5 — Competitive Market**
 (`FOUNDER_ROADMAP.md`).
 
 ## M11.2.4.1 — récapitulatif (terminé, non re-détaillé ici)
@@ -255,6 +256,107 @@ plan, pas des bugs)** :
   contrat à `monthsRemaining === 0` continue de s'exécuter normalement
   sans aucun effet spécial, comportement temporaire assumé.
 
+## M11.2.4.5 — récapitulatif de livraison (M11.2.4 intégralement terminé)
+
+Plan : `docs/superpowers/plans/2026-09-13-founder-m11.2.4.5-renewal-loss.md`.
+6 tâches TDD livrées, chacune commit+push séparément :
+
+1. `9f97dc4` — cycle de renouvellement porté entièrement par
+   `AccountContract` (aucun nouveau statut d'opportunité) via deux
+   champs additifs `renewalProposal`/`renewalDeadlineMonthsRemaining` ;
+   `deriveRenewalBudget` compose le rapport de force **facteur par
+   facteur** (jamais une équation opaque, contrainte explicite spec
+   §19.1) : confiance (indulgence prix), concentration (pression prix),
+   réputation (bonus prix), pression concurrentielle
+   (`AggregateCompetition`), chaque facteur testé isolément avec sa
+   direction attendue, borné à `[referencePrice×0.4, referencePrice×3]`.
+2. `c40a8a0` — `resolveAccountRenewalDecision` : accept/counter/withdraw
+   déterministes (même patron que la négociation initiale M11.2.4.2,
+   aucun jet de probabilité sur l'issue) ; accept → `signContract` (le
+   client ouvre TOUJOURS le renouvellement, jamais le joueur) ; counter
+   → comparé à `deriveRenewalBudget` ; withdraw → départ immédiat
+   (`status: "lost"`, `contract: null`).
+3. `b90aa6e` — `advanceContractRenewalLifecycle` (fonction pure) :
+   déclenche la proposition à `monthsRemaining === 0`, décrémente
+   `renewalDeadlineMonthsRemaining` (délai de grâce
+   `RENEWAL_GRACE_PERIOD_MONTHS = 3`) si une proposition reste sans
+   réponse, départ réel (`contract: null`) au terme du délai. Intégré
+   dans `applyContractExecutionOutcomes` (5 familles) ; `concentration`
+   dérivée du CA du mois **précédent déjà finalisé**
+   (`owned.lastStatement?.revenue`) — simplification délibérée et
+   documentée évitant toute dépendance circulaire avec le CA du mois en
+   cours d'exécution.
+4. `67899f4` — intégration `simulateMonth.ts` : nouveau paramètre
+   `RenewalContext` (défaut neutre, même patron que
+   `competitivePressure` sur `resolveBusinessMonth`) ; deux nouveaux
+   événements causaux détectés par comparaison d'état avant/après (pas
+   de champ de tracking ajouté) : `strategic-account-renewed`
+   (proposition non-null devenue null sur opportunité toujours "won") et
+   `strategic-account-lost` (retrait volontaire OU expiration
+   automatique du délai de grâce).
+5. `e77cd4d` — migration défensive (`renewalProposal ?? null`,
+   `renewalDeadlineMonthsRemaining ?? null`) ; écran : bloc "Proposition
+   de renouvellement" (Prix/Volume/Durée + Accepter/Contre-proposer/
+   Refuser, réutilise `ProposalForm` de M11.2.4.2 sans modification) ;
+   liste des comptes stratégiques filtrée pour exclure `"lost"`/
+   `"declined-by-player"`.
+6. Vérification finale (ce commit) : 625 tests engine + 125 tests web
+   verts, `typecheck`/`typecheck:test`/`lint`/`build` propres des deux
+   côtés, garde-fou `forbiddenApis` vert (58 tests). Playtest mobile
+   réel (390×844) avec injection directe d'un contrat en fin de terme
+   rattaché à une VRAIE offre lancée (nécessaire : le cycle de
+   renouvellement ne s'exécute que dans la boucle par offre lancée de
+   `businessResolution.ts`, confirmé en pratique — une opportunité liée
+   à un `offerId` fictif ne déclenche jamais le renouvellement) : la
+   proposition de renouvellement du client est apparue avec un prix
+   RÉELLEMENT calculé par `deriveRenewalBudget` (10 627 €, pas une
+   valeur codée en dur), acceptée → nouveau contrat affiché proprement
+   (montant/volume mis à jour, aucun id technique, aucun champ brut) ;
+   un second compte laissé sans réponse pendant les 3 mois du délai de
+   grâce a réellement disparu de la liste (départ effectif), le premier
+   compte renouvelé restant visible avec ses métriques de relation
+   à jour. Aucune erreur console, aucun débordement horizontal.
+
+**Limitations assumées et documentées (décisions de scope explicites du
+plan, pas des bugs)** :
+- Le déclenchement du renouvellement et le décompte du délai de grâce
+  vivent dans la boucle par offre LANCÉE de `businessResolution.ts` —
+  un compte dont l'offre associée n'est plus lancée (retirée du marché)
+  ne progresse plus dans son cycle de renouvellement. Comportement
+  cohérent avec M11.2.4.3 (l'exécution contractuelle elle-même a la
+  même contrainte), non re-testé séparément ici.
+- `concentration` utilisée dans `deriveRenewalBudget` reste calculée sur
+  le CA du mois précédent (même simplification qu'en M11.2.4.4/.3 pour
+  éviter la dépendance circulaire intra-mois) — jamais le CA du mois en
+  cours de résolution.
+- Pas de mise en concurrence explicite du joueur par un concurrent
+  nommé (spec §12, variante "mise en concurrence") : la pression
+  concurrentielle influence déjà le budget de renouvellement via
+  `AggregateCompetition` (niveau 1, cohérent avec le reste du jeu
+  jusqu'à M11.2.5), sans narration d'un concurrent identifié — arrivera
+  naturellement avec M11.2.5 (Competitive Market).
+
+**Bugs réels découverts et corrigés pendant l'écriture des tests/le
+playtest (TDD, pas des suppositions)** :
+- Erreur de narrowing TypeScript sur le ternaire construisant `decision`
+  dans `applyStrategicAccountActions` (le type incluait encore
+  `"propose"` dans la branche renouvellement) — corrigée en ajoutant
+  `action.kind !== "propose"` comme garde explicite dans la condition,
+  laissant TS affiner correctement.
+- Un test d'intégration multi-mois réutilisait par erreur une action de
+  lancement d'offre à chaque itération, provoquant
+  `launchOffer: déjà lancée` dès le 2e mois — corrigé avec un helper
+  dédié aux mois répétés (`offerActions: []`).
+- Pendant le playtest manuel réel (pas les tests automatisés) : une
+  opportunité injectée avec un `offerId` fictif (ne correspondant à
+  aucune offre réellement lancée) ne déclenche JAMAIS
+  `advanceContractRenewalLifecycle`, puisque cette fonction n'est
+  appelée que depuis la boucle par offre lancée — comportement correct
+  du moteur, pas un bug, mais une leçon de playtest (la première
+  tentative de script utilisait un `offerId` fictif et n'observait
+  aucun déclenchement ; corrigé en créant/lançant une vraie offre avant
+  l'injection).
+
 ## Design actif
 
 `docs/superpowers/specs/2026-09-12-founder-m11.2.4-strategic-accounts-design.md`
@@ -265,28 +367,23 @@ plan, pas des bugs)** :
 - Le déséquilibre de calibration Café/petit restaurant (documenté depuis
   M11.2.3.1) reste un sujet de calibration séparé, non traité par
   M11.2.4.
-- M11.2.4.5 (Renewal & Loss) doit implémenter le rapport de force (spec
-  §11, tableau de facteurs déjà représentables avec les grandeurs
-  EXISTANTES : `concentration`, `trust`, `contract.price` vs
-  `segment.referencePrice`, `familyState.reputationScore`,
-  `AggregateCompetition`, `relationship.history`) et le renouvellement
-  dynamique (spec §12, patron `accept`/`counter`/`reject` déjà éprouvé
-  en M11.2.4.2, à réutiliser pour les variantes du principe 12 —
-  renouvellement favorable, renégociation, baisse, volume
-  supplémentaire, hausse tarifaire, mise en concurrence, départ). Un
-  départ réel de compte doit libérer la capacité réellement réabsorbable
-  par new/repeat le mois suivant (déjà garanti structurellement par le
-  pipeline M11.2.4.3, aucune compensation artificielle à construire).
-- `relationship.history` (M11.2.4.4) n'est pour l'instant peuplé mais
-  jamais affiché à l'écran (hors scope M11.2.4.4, `history` sert
-  M11.2.4.5 pour le rapport de force) — vérifier si M11.2.4.5 a
-  effectivement besoin de le lire avant d'en changer la forme.
+- `relationship.history` (M11.2.4.4) reste peuplé mais jamais affiché
+  directement à l'écran — `deriveRenewalBudget` (M11.2.4.5) ne l'utilise
+  pas non plus au final (le rapport de force s'appuie sur `trust`/
+  `concentration`/`reputationScore`/`competitivePressure`, pas
+  directement sur l'historique brut). À réévaluer si une future
+  itération narrative veut s'appuyer dessus.
+- Le cycle de renouvellement/départ (M11.2.4.5) ne progresse que dans la
+  boucle par offre LANCÉE de `businessResolution.ts` — voir limitation
+  documentée dans le récapitulatif M11.2.4.5 ci-dessus.
 - Les constantes de calibrage (`STRATEGIC_ACCOUNT_OPPORTUNITY_MONTHLY_PROBABILITY`
   0.06, `MAX_ACTIVE_STRATEGIC_ACCOUNT_OPPORTUNITIES_PER_BUSINESS` 3,
   `MAX_RESEARCH_HOURS_FOR_FULL_CONFIDENCE` 40, `NEGOTIATION_PRICE_TOLERANCE`
   1.0, `TRUST_EWMA_ALPHA` 0.15, `CONTRACTUAL_BREACH_FRUSTRATION_EWMA_ALPHA`
-  0.3, poids 50/50 de la formule de confiance) sont des choix empiriques,
-  pas une vérité produit figée.
+  0.3, poids 50/50 de la formule de confiance, `RENEWAL_GRACE_PERIOD_MONTHS`
+  3, `TRUST_PRICE_LENIENCY` 0.3, `CONCENTRATION_PRICE_PRESSURE` 0.2,
+  `REPUTATION_PRICE_BONUS` 0.1, `COMPETITION_PRICE_PRESSURE` 0.25) sont
+  des choix empiriques, pas une vérité produit figée.
 - Détail cosmétique mineur observé au playtest (pas un bug fonctionnel) :
   le catalogue d'identités fictives (`strategicAccountIdentity.ts`)
   associe prénoms et intitulés de poste de façon indépendante, ce qui
@@ -297,19 +394,23 @@ plan, pas des bugs)** :
 
 ## Prochaine action autonome
 
-Démarrer **M11.2.4.5 — Renewal & Loss** (dernier jalon de M11.2.4) en
-suivant le cycle standard (`CLAUDE.md`) : inspecter le code réel actuel
-(`accountRelationship.ts`/`strategicAccounts.ts`/`businessResolution.ts`
-tels qu'ils existent maintenant après M11.2.4.4, en particulier
-`AccountRelationshipState`/`relationship.history` tout juste ajoutés),
-relire spec M11.2.4 §11/§12 (rapport de force, renouvellement dynamique)
-et §15 M11.2.4.5 (frontières précises, critère de complétude : le
-scénario narratif complet de l'énoncé jouable de bout en bout), écrire
-un plan d'implémentation TDD dédié (`docs/superpowers/plans/`),
-l'exécuter tâche par tâche, vérifier, commit/push, mettre à jour ce
-fichier, puis enchaîner sur M11.2.5 (Competitive Market) sans demander
-de confirmation — sauf si un cas `PRODUCT DECISION REQUIRED` réel
-(`CLAUDE.md`) est rencontré.
+**M11.2.4 — Strategic Accounts est intégralement terminé (5/5
+sous-jalons).** Démarrer **M11.2.5 — Competitive Market**
+(`FOUNDER_ROADMAP.md`, section "Ensuite") en suivant le cycle standard
+(`CLAUDE.md`) : inspecter le code réel actuel de la concurrence
+agrégée niveau 1 (`AggregateCompetition`, `src/engine/competition/`),
+relire la vision/roadmap pour cerner précisément ce que "concurrents
+identifiés réels, alternatives disponibles réellement modélisées"
+signifie concrètement dans le code existant (marché/segments/offres),
+écrire une spec + self-review si le périmètre n'est pas déjà assez
+précis pour un plan direct, sinon écrire directement un plan
+d'implémentation TDD dédié (`docs/superpowers/plans/`), l'exécuter
+tâche par tâche, vérifier, commit/push, mettre à jour ce fichier — sans
+demander de confirmation, sauf si un cas `PRODUCT DECISION REQUIRED`
+réel (`CLAUDE.md`) est rencontré (le passage d'une concurrence agrégée
+abstraite à des concurrents nommés est plausiblement proche d'un tel
+cas si le périmètre exact n'est pas déjà borné par la vision/roadmap —
+à vérifier en premier avant d'écrire du code).
 
 ## Blocage produit en attente
 
