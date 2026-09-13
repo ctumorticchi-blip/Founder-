@@ -10,6 +10,7 @@ import { INITIAL_ACCOUNT_TRUST } from "./accountRelationship.js";
 import type { EconomicFamily } from "../../types/business.js";
 import type { Offer } from "../../types/offer.js";
 import type {
+  AccountContract,
   AccountNegotiationDecision,
   AccountProposal,
   StrategicAccountAction,
@@ -364,6 +365,61 @@ export function resolveAccountRenewalDecision(
       // Le compteur d'expiration n'est JAMAIS remis à zéro par une contre-négociation (décision 4, plan).
     },
   };
+}
+
+/**
+ * Fait avancer le cycle de vie du renouvellement d'un contrat d'UN mois
+ * (spec M11.2.4.5 §12, décisions 2/5 du plan) — appelée APRÈS que
+ * `monthsRemaining` a déjà été décrémenté ce mois-ci (M11.2.4.3). Deux
+ * cas, mutuellement exclusifs par construction (`signContract` remet
+ * toujours les deux champs à `null` ensemble) :
+ * 1. `monthsRemaining === 0` et aucun renouvellement encore en attente
+ *    -> le CLIENT ouvre le renouvellement (jamais le joueur en premier) :
+ *    pose `renewalProposal`/`renewalDeadlineMonthsRemaining`.
+ * 2. Un renouvellement est déjà en attente (`renewalDeadlineMonthsRemaining
+ *    !== null`) et n'a pas été résolu ce mois-ci (sinon `signContract`
+ *    aurait déjà remis ce champ à `null` avant cet appel, via
+ *    `resolveAccountRenewalDecision`, appliqué AVANT dans
+ *    `simulateMonth.ts`) -> décrémente le délai ; à `0`, départ réel.
+ * Fonction pure.
+ */
+export function advanceContractRenewalLifecycle(params: {
+  readonly contract: AccountContract;
+  readonly opportunityId: string;
+  readonly referencePrice: number;
+  readonly trust: number;
+  readonly concentration: number;
+  readonly reputationScore: number;
+  readonly competitivePressure: number;
+}): { readonly contract: AccountContract | null; readonly lost: boolean } {
+  const { contract, opportunityId, referencePrice, trust, concentration, reputationScore, competitivePressure } = params;
+
+  if (contract.monthsRemaining === 0 && contract.renewalProposal === null) {
+    const budget = deriveRenewalBudget({ opportunityId, referencePrice, trust, concentration, reputationScore, competitivePressure });
+    return {
+      contract: {
+        ...contract,
+        renewalProposal: {
+          price: budget.maxAcceptablePrice,
+          volume: budget.expectedVolume,
+          qualityCommitment: budget.minAcceptableQuality,
+          durationMonths: contract.durationMonths,
+        },
+        renewalDeadlineMonthsRemaining: RENEWAL_GRACE_PERIOD_MONTHS,
+      },
+      lost: false,
+    };
+  }
+
+  if (contract.renewalDeadlineMonthsRemaining !== null) {
+    const nextDeadline = contract.renewalDeadlineMonthsRemaining - 1;
+    if (nextDeadline <= 0) {
+      return { contract: null, lost: true };
+    }
+    return { contract: { ...contract, renewalDeadlineMonthsRemaining: nextDeadline }, lost: false };
+  }
+
+  return { contract, lost: false };
 }
 
 /** Investit des heures de recherche sur une opportunité (spec §6, §7) : accumule, raffraîchit l'estimation. No-op sur un statut terminal. */

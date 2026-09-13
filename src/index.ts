@@ -198,6 +198,7 @@ export {
   computeContractualDemandAdjustment,
   deriveRenewalBudget,
   deriveTrueOpportunityBudget,
+  advanceContractRenewalLifecycle,
   findEligibleStrategicAccountSlots,
   resolveAccountNegotiationDecision,
   resolveAccountRenewalDecision,

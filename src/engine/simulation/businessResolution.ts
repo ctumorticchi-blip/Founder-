@@ -37,6 +37,7 @@ import {
   updateSegmentMemory,
 } from "../customer/retention.js";
 import {
+  advanceContractRenewalLifecycle,
   allocateContractOutcomes,
   computeContractedVolumeForOffer,
   computeContractualCapacityAllocation,
@@ -44,7 +45,7 @@ import {
   wonOpportunitiesForOffer,
   type ContractOutcome,
 } from "../business/strategicAccounts.js";
-import { computeAccountRelationshipUpdate } from "../business/accountRelationship.js";
+import { INITIAL_ACCOUNT_TRUST, computeAccountConcentration, computeAccountRelationshipUpdate } from "../business/accountRelationship.js";
 import type { MonthlyFinancialStatement, EconomicFamily } from "../../types/business.js";
 import type { OwnedProperty } from "../../types/realEstate.js";
 import type { Offer, OfferAction } from "../../types/offer.js";
@@ -341,12 +342,15 @@ function applyContractExecutionOutcomes(
     readonly genericOperationalPenalty: number;
     readonly reputationScore: number;
     readonly date: GameDate;
+    /** CA de l'ENTREPRISE au mois précédent (spec M11.2.4.5, évite une dépendance au CA du mois courant encore en cours d'accumulation à ce point de la boucle). */
+    readonly priorBusinessRevenue: number;
+    readonly competitivePressure: number;
   },
 ): void {
   for (const outcome of outcomes) {
     const opportunity = opportunitiesById.get(outcome.opportunityId);
     if (!opportunity?.contract) continue;
-    const updatedContract = {
+    const contractAfterExecution = {
       ...opportunity.contract,
       lastMonthServedVolume: outcome.servedVolume,
       lastMonthUnservedVolume: outcome.unservedVolume,
@@ -356,7 +360,7 @@ function applyContractExecutionOutcomes(
     const relationship = segment
       ? computeAccountRelationshipUpdate({
           previous: opportunity.relationship,
-          contract: updatedContract,
+          contract: contractAfterExecution,
           offer: context.offer,
           segment,
           genericOperationalPenalty: context.genericOperationalPenalty,
@@ -364,7 +368,20 @@ function applyContractExecutionOutcomes(
           date: context.date,
         })
       : opportunity.relationship;
-    opportunitiesById.set(outcome.opportunityId, { ...opportunity, contract: updatedContract, relationship });
+
+    // Cycle de vie du renouvellement (spec M11.2.4.5 §12), après exécution du mois.
+    const concentration = computeAccountConcentration(outcome.revenue, context.priorBusinessRevenue);
+    const { contract: contractAfterRenewal, lost } = advanceContractRenewalLifecycle({
+      contract: contractAfterExecution,
+      opportunityId: opportunity.id,
+      referencePrice: segment?.referencePrice ?? 0,
+      trust: relationship?.trust ?? INITIAL_ACCOUNT_TRUST,
+      concentration,
+      reputationScore: context.reputationScore,
+      competitivePressure: context.competitivePressure,
+    });
+
+    opportunitiesById.set(outcome.opportunityId, lost ? { ...opportunity, status: "lost", contract: null, relationship } : { ...opportunity, contract: contractAfterRenewal!, relationship });
   }
 }
 
@@ -455,6 +472,14 @@ export function resolveBusinessMonth(
   rng: Rng,
   date: GameDate,
   market: Market,
+  /**
+   * Pression concurrentielle agrégée (spec M11.2.4.5 §18.1, proxy
+   * explicite d'alternatives disponibles pour un compte stratégique en
+   * renouvellement — `AggregateCompetition.totalCapturedRevenueShare`,
+   * 0-1) — optionnelle car sans effet tant qu'aucun contrat n'atteint
+   * son renouvellement (la quasi-totalité des appels existants).
+   */
+  competitivePressure = 0,
 ): ResolvedBusinessMonth {
   if (!action.decisions) {
     throw new RangeError(`resolveBusinessMonth: businessId="${action.businessId}" nécessite des décisions ce mois-ci.`);
@@ -551,6 +576,8 @@ export function resolveBusinessMonth(
           genericOperationalPenalty: operationalPenalty,
           reputationScore: state.reputationScore,
           date,
+          priorBusinessRevenue: owned.lastStatement?.revenue ?? 0,
+          competitivePressure,
         });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
@@ -650,6 +677,8 @@ export function resolveBusinessMonth(
           genericOperationalPenalty: operationalPenalty,
           reputationScore: state.reputationScore,
           date,
+          priorBusinessRevenue: owned.lastStatement?.revenue ?? 0,
+          competitivePressure,
         });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
@@ -763,6 +792,8 @@ export function resolveBusinessMonth(
           genericOperationalPenalty: operationalPenalty,
           reputationScore: state.reputationScore,
           date,
+          priorBusinessRevenue: owned.lastStatement?.revenue ?? 0,
+          competitivePressure,
         });
         demandById.set(offer.id, {
           ...adjustedFunnel,
@@ -897,6 +928,8 @@ export function resolveBusinessMonth(
           genericOperationalPenalty: operationalPenalty,
           reputationScore: state.reputationScore,
           date,
+          priorBusinessRevenue: owned.lastStatement?.revenue ?? 0,
+          competitivePressure,
         });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
@@ -1004,6 +1037,8 @@ export function resolveBusinessMonth(
           genericOperationalPenalty: operationalPenalty,
           reputationScore: state.reputationScore,
           date,
+          priorBusinessRevenue: owned.lastStatement?.revenue ?? 0,
+          competitivePressure,
         });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(

@@ -5,7 +5,7 @@ import type { BusinessAction, BusinessFamilyDecisions, CreateBusinessSpec, Owned
 import type { Market } from "../../../src/types/market.js";
 import type { Offer, OfferAction } from "../../../src/types/offer.js";
 import type { SegmentCustomerMemory } from "../../../src/types/satisfaction.js";
-import type { StrategicAccountOpportunity } from "../../../src/types/strategicAccount.js";
+import type { AccountContract, StrategicAccountOpportunity } from "../../../src/types/strategicAccount.js";
 
 const SERVICE_SPEC: CreateBusinessSpec = {
   family: "service",
@@ -990,5 +990,122 @@ describe("Contract Execution — Subscription (spec M11.2.4.3 décision 7 : volu
     expect(relationship!.satisfaction.scoreThisMonth).not.toBeNull();
     // Capacité infinie -> jamais de sous-livraison -> breachFrustration reste nul.
     expect(relationship!.breachFrustration).toBe(0);
+  });
+});
+
+describe("Renewal & Loss — intégration réelle (spec M11.2.4.5)", () => {
+  const CONTRACT_SEGMENT_ID = "service-entreprises-exigeantes";
+  const OFFER_PRICE = 60;
+  const RENEWAL_RNG_SEED = 13;
+
+  function contractOfferActions(): OfferAction[] {
+    return [
+      {
+        kind: "create",
+        spec: { id: "svc-offer", name: "Accompagnement grands comptes", businessModel: "service-hours", positioning: "standard", targetSegment: CONTRACT_SEGMENT_ID, price: OFFER_PRICE },
+      },
+      { kind: "launch", offerId: "svc-offer" },
+    ];
+  }
+
+  function wonOpportunityAtTerm(monthsRemaining: number, overrides: Partial<AccountContract> = {}): StrategicAccountOpportunity {
+    return {
+      id: "svc:svc-offer:won-1",
+      businessId: "svc",
+      offerId: "svc-offer",
+      segmentId: CONTRACT_SEGMENT_ID,
+      companyName: "Groupe Meridien",
+      contactName: "Camille Marchand",
+      contactRole: "Directrice générale",
+      source: "network",
+      discoveredAt: DATE,
+      status: "won",
+      researchHoursInvested: 40,
+      budgetEstimate: {
+        price: { value: OFFER_PRICE, uncertainty: 0 },
+        volume: { value: 10, uncertainty: 0 },
+        qualityCommitment: { value: 60, uncertainty: 0 },
+      },
+      lastAccountProposal: null,
+      contract: {
+        price: OFFER_PRICE,
+        volume: 10,
+        qualityCommitment: 60,
+        durationMonths: 6,
+        monthsRemaining,
+        signedAt: DATE,
+        lastMonthServedVolume: 0,
+        lastMonthUnservedVolume: 0,
+        renewalProposal: null,
+        renewalDeadlineMonthsRemaining: null,
+        ...overrides,
+      },
+      relationship: null,
+    };
+  }
+
+  function contractAction(overrides: Partial<BusinessAction> = {}): BusinessAction {
+    return serviceAction({ offerActions: contractOfferActions(), founderHoursAllocated: 100_000, ...overrides });
+  }
+
+  /** Même action mais SANS create/launch (l'offre existe déjà depuis un mois précédent) — pour les résolutions répétées. */
+  function repeatMonthAction(overrides: Partial<BusinessAction> = {}): BusinessAction {
+    return serviceAction({ offerActions: [], founderHoursAllocated: 100_000, ...overrides });
+  }
+
+  it("un contrat dont monthsRemaining atteint 0 ce mois déclenche un renouvellement réel", () => {
+    const owned = createOwnedBusiness("svc", SERVICE_SPEC);
+    const ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonOpportunityAtTerm(0)] };
+    const result = resolveBusinessMonth(ownedWithContract, contractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(RENEWAL_RNG_SEED), DATE, SERVICE_MARKET);
+    const contract = result.updated.strategicAccountOpportunities[0]!.contract!;
+    expect(contract.renewalProposal).not.toBeNull();
+    expect(contract.renewalDeadlineMonthsRemaining).toBe(3); // RENEWAL_GRACE_PERIOD_MONTHS
+    expect(result.updated.strategicAccountOpportunities[0]!.status).toBe("won"); // toujours actif pendant la négociation
+  });
+
+  it("un renouvellement non résolu pendant RENEWAL_GRACE_PERIOD_MONTHS mois consécutifs finit en départ réel (status lost, contract null)", () => {
+    const owned = createOwnedBusiness("svc", SERVICE_SPEC);
+    let ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonOpportunityAtTerm(0)] };
+    let result = resolveBusinessMonth(ownedWithContract, contractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(RENEWAL_RNG_SEED), DATE, SERVICE_MARKET);
+    expect(result.updated.strategicAccountOpportunities[0]!.contract!.renewalDeadlineMonthsRemaining).toBe(3);
+
+    // 2 mois de plus sans résolution -> délai décrémenté (2, puis 1), toujours "won".
+    for (const expectedDeadline of [2, 1]) {
+      ownedWithContract = result.updated;
+      result = resolveBusinessMonth(ownedWithContract, repeatMonthAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(RENEWAL_RNG_SEED), DATE, SERVICE_MARKET);
+      expect(result.updated.strategicAccountOpportunities[0]!.contract!.renewalDeadlineMonthsRemaining).toBe(expectedDeadline);
+      expect(result.updated.strategicAccountOpportunities[0]!.status).toBe("won");
+    }
+
+    // 3ᵉ mois sans résolution -> délai atteint 0 -> départ réel.
+    ownedWithContract = result.updated;
+    result = resolveBusinessMonth(ownedWithContract, repeatMonthAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(RENEWAL_RNG_SEED), DATE, SERVICE_MARKET);
+    const opportunity = result.updated.strategicAccountOpportunities[0]!;
+    expect(opportunity.status).toBe("lost");
+    expect(opportunity.contract).toBeNull();
+  });
+
+  it("le mois du départ, la capacité qu'il consommait est réellement disponible pour new/repeat (conservation, comparaison avec/sans le compte)", () => {
+    const owned = createOwnedBusiness("svc", SERVICE_SPEC);
+    // Réduit la capacité pour que le volume du compte (10) compte réellement dans le total servi.
+    const constrainedAction = contractAction({ founderHoursAllocated: 20 });
+
+    const withoutAccount: OwnedBusiness = { ...owned, strategicAccountOpportunities: [] };
+    const withLostAccount: OwnedBusiness = {
+      ...owned,
+      strategicAccountOpportunities: [
+        wonOpportunityAtTerm(0, {
+          renewalProposal: { price: OFFER_PRICE, volume: 10, qualityCommitment: 60, durationMonths: 6 },
+          renewalDeadlineMonthsRemaining: 1, // expirera ce mois-ci si non résolu
+        }),
+      ],
+    };
+
+    const resultWithout = resolveBusinessMonth(withoutAccount, constrainedAction, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(RENEWAL_RNG_SEED), DATE, SERVICE_MARKET);
+    const resultLost = resolveBusinessMonth(withLostAccount, constrainedAction, DEMAND_SHARE, LEADERSHIP_SKILL, createRng(RENEWAL_RNG_SEED), DATE, SERVICE_MARKET);
+
+    expect(resultLost.updated.strategicAccountOpportunities[0]!.status).toBe("lost");
+    // Même capacité, même demande organique (aucun contrat n'y contribue plus après le départ) -> même revenu.
+    expect(resultLost.statement.revenue).toBeCloseTo(resultWithout.statement.revenue, 6);
   });
 });
