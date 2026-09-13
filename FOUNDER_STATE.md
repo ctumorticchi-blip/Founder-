@@ -10,9 +10,10 @@ aveuglément.
 Branche : `claude/founder-web-game-4v4xga` (branche de développement
 désignée pour cette session — voir note ci-dessous).
 Dernier commit vérifié au moment de la rédaction de cette version :
-`ea4b941` — M11.2.5 (Competitive Market, portée Option C) intégralement
+`0ffc1ae` — M11.2.6.1 (Market Study, première tranche de M11.2.6)
 livré et vert. **M11.2.4 — Strategic Accounts (5/5 sous-jalons) ET
-M11.2.5 — Competitive Market sont désormais terminés.**
+M11.2.5 — Competitive Market sont terminés. M11.2.6 — Market
+Intelligence & UX est en cours (1/3 sous-tranches livrée).**
 
 **Note d'infrastructure** : cette session développe sur la branche
 `claude/founder-web-game-4v4xga` (imposée par l'environnement
@@ -28,8 +29,15 @@ avant de continuer.
 **M11.2.4 — Strategic Accounts : TERMINÉ (5/5 sous-jalons).**
 **M11.2.5 — Competitive Market : TERMINÉ (portée Option C, décision
 produit issue #1).**
-Prochain milestone à démarrer : **M11.2.6 — Market Intelligence & UX**
-(`FOUNDER_ROADMAP.md`).
+**M11.2.6 — Market Intelligence & UX : EN COURS.** Découpé en 3
+sous-tranches (décision autonome, voir spec M11.2.6.1) :
+1. ✅ M11.2.6.1 — Market Study (câblage `projectMarketView`, écran
+   "Étude de marché").
+2. ⬜ M11.2.6.2 — demande par segment agrégée au niveau marché (spec à
+   écrire : nécessite une nouvelle agrégation moteur, pas une pure
+   restitution).
+3. ⬜ M11.2.6.3 — satisfaction agrégée + "tableau de bord commercial"
+   multi-entreprises.
 
 ## M11.2.4.1 — récapitulatif (terminé, non re-détaillé ici)
 
@@ -441,10 +449,54 @@ ajustement du script de playtest (une opportunité synthétique liée à un
 depuis M11.2.4.5, reconfirmée ici pour les concurrents identifiés qui
 suivent la même boucle par offre lancée).
 
+## M11.2.6.1 — récapitulatif de livraison (Market Study, première tranche de M11.2.6)
+
+Architecture pré-approuvée : `docs/superpowers/specs/2026-09-10-founder-m11.2-design.md`
+§8 (écrite avant M11.2.2-M11.2.5, "architecture seulement"). Découpage
+concret en sous-tranches + détail M11.2.6.1 : `docs/superpowers/specs/2026-09-13-founder-m11.2.6.1-market-study-design.md`.
+Plan : `docs/superpowers/plans/2026-09-13-founder-m11.2.6.1-market-study.md`.
+Une seule tâche TDD, commit `0ffc1ae` :
+
+- Câble enfin `projectMarketView`/`MarketEstimate` (moteur M4, jamais
+  appelés côté web jusqu'ici — confirmé par `git grep` à l'inspection
+  M11.2.5 §0 puis reconfirmé ici) dans l'écran "Concurrents identifiés"
+  (M11.2.5), renommé **"Étude de marché"** : potentiel/croissance en
+  fourchette bruitée (`formatEstimateRange`, réutilisé depuis
+  `strategicAccountLabels.ts`), intensité concurrentielle en palier
+  qualitatif (`competitiveIntensityLabel`, nouveau, même patron que le
+  reste de `competitorLabels.ts`). Zéro nouvelle fonction moteur, zéro
+  migration (rien de nouveau persisté — restitution pure, exactement
+  comme prévu par l'architecture).
+- Décision de scope documentée (spec §0) : `capitalIntensity`/
+  `entryBarriers`, déjà affichés bruts dans `OpportunitiesScreen.tsx`,
+  ne sont PAS couverts par `MarketEstimate` et ne sont donc **pas**
+  bruités ici — ce sont des caractéristiques structurelles d'un modèle
+  d'activité (savoir général), pas des grandeurs dynamiques nécessitant
+  une vraie étude de marché. Seules les 3 grandeurs déjà couvertes par
+  `MarketEstimate` entrent dans ce périmètre.
+- Vérification : 130 tests web verts (+1 sur la base M11.2.5),
+  `typecheck`/`lint`/`build` propres, tests M11.2.4.x/M11.2.5 existants
+  inchangés et toujours verts (aucune régression du renommage de
+  titre). Playtest mobile réel (390×844) : section "Le marché" affichée
+  au-dessus des concurrents identifiés, fourchette de potentiel large
+  (~82 447 € - 3 857 600 €) cohérente avec skill finance/stratégie à 0
+  (18 ans, aucune expérience — `MAX_RELATIVE_NOISE=0.5` déjà existant,
+  non modifié), aucune erreur console, aucun débordement horizontal.
+
+**Aucun bug trouvé** — la seule friction a été un texte de label
+dupliqué (`competitiveIntensityLabel` incluait à tort le préfixe
+"Intensité concurrentielle" déjà affiché par le label de la ligne,
+causant une erreur "multiple elements" dans le test RTL) — corrigé en
+retirant le préfixe de la fonction de label (valeur seule : "Faible"/
+"Modérée"/"Élevée").
+
 ## Design actif
 
 `docs/superpowers/specs/2026-09-12-founder-m11.2.4-strategic-accounts-design.md`
 (corrigé au commit `58d080f`) — couvre l'ensemble M11.2.4.1→M11.2.4.5.
+`docs/superpowers/specs/2026-09-10-founder-m11.2-design.md` §8 +
+`docs/superpowers/specs/2026-09-13-founder-m11.2.6.1-market-study-design.md`
+— couvrent M11.2.6 (architecture globale + détail de la tranche 1).
 
 ## Points de vigilance connus (à ne pas oublier, ne pas re-découvrir)
 
@@ -492,26 +544,34 @@ suivent la même boucle par offre lancée).
 
 ## Prochaine action autonome
 
-**M11.2.4 — Strategic Accounts (5/5 sous-jalons) ET M11.2.5 —
-Competitive Market sont intégralement terminés.** Démarrer
-**M11.2.6 — Market Intelligence & UX** (`FOUNDER_ROADMAP.md`, section
-"Ensuite") en suivant le cycle standard (`CLAUDE.md`) : inspecter le
-code réel actuel (`projectMarketView`/`MarketEstimate` déjà présents
-côté moteur mais jamais câblés côté web — confirmé à l'inspection
-M11.2.5 §0 — et l'écran "Concurrents identifiés" tout juste livré, très
-minimal), relire la vision/roadmap pour cerner précisément ce que
-"consolidation de l'information imparfaite/UX autour du marché et des
-comptes" signifie concrètement, écrire une spec + self-review si le
-périmètre n'est pas déjà assez précis pour un plan direct, sinon
-écrire directement un plan d'implémentation TDD dédié
-(`docs/superpowers/plans/`), l'exécuter tâche par tâche, vérifier,
-commit/push, mettre à jour ce fichier — sans demander de confirmation,
-sauf si un cas `PRODUCT DECISION REQUIRED` réel (`CLAUDE.md`) est
-rencontré. À première lecture, ce milestone ressemble davantage à une
-consolidation UX/UI (brancher de l'existant, harmoniser l'affichage)
-qu'à un nouveau système de gameplay — donc plausiblement SANS trigger,
-mais à vérifier réellement avant d'écrire du code plutôt que de le
-supposer par analogie avec M11.2.5.
+**M11.2.6 — Market Intelligence & UX est en cours (1/3 sous-tranches
+livrée, M11.2.6.1 — Market Study).** Démarrer **M11.2.6.2 — demande par
+segment agrégée au niveau marché** en suivant le cycle standard
+(`CLAUDE.md`) :
+
+- Contrairement à M11.2.6.1 (pure restitution), cette sous-tranche
+  nécessite une VRAIE nouvelle agrégation moteur — l'architecture §8 le
+  dit explicitement ("demande par segment" fait partie des "nouvelles
+  entités M11.2.2-M11.2.5" à couvrir). Inspecter d'abord ce qui existe
+  déjà : `SegmentDemandContribution`/`DemandFunnelResult.bySegment`
+  (`types/demand.ts`) est calculé PAR OFFRE (via `computeOfferDemand`),
+  pas agrégé au niveau d'un marché entier (toutes offres/entreprises
+  confondues, y compris celles que le joueur n'opère pas). Déterminer
+  si "demande par segment" au niveau marché doit être une vraie nouvelle
+  fonction d'agrégation (somme des `bySegment` de toutes les offres du
+  joueur sur ce marché — simple, additif) ou quelque chose de plus
+  ambitieux (demande totale du marché entier, y compris la part captée
+  par la concurrence — nécessiterait de nouvelles hypothèses). Écrire
+  une spec dédiée (`docs/superpowers/specs/`) avant tout code : cette
+  sous-tranche a plus de marge d'ambiguïté que M11.2.6.1, vérifier
+  réellement les 8 triggers plutôt que de supposer qu'aucun ne
+  s'applique.
+- Une fois M11.2.6.2 livré, enchaîner sur **M11.2.6.3 — satisfaction
+  agrégée + tableau de bord commercial** puis, M11.2.6 entièrement
+  terminé, sur **M11.3 — Sales & Marketing** (`FOUNDER_ROADMAP.md`,
+  section "Ensuite") — sans demander de confirmation entre chaque
+  sous-tranche/milestone, sauf si un cas `PRODUCT DECISION REQUIRED`
+  réel (`CLAUDE.md`) est rencontré.
 
 ## Blocage produit en attente
 
