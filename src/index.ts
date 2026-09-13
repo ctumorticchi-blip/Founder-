@@ -132,8 +132,14 @@ export type {
   Estimate,
   MarketEstimate,
   MarketShareLevel,
+  SegmentAvailabilityEstimate,
 } from "./types/intelligence.js";
-export { type IntelligenceSkills, projectCompetitorView, projectMarketView } from "./engine/intelligence/intelligence.js";
+export {
+  type IntelligenceSkills,
+  projectCompetitorView,
+  projectMarketView,
+  projectSegmentAvailabilityView,
+} from "./engine/intelligence/intelligence.js";
 
 export type { GameEvent, GameEventKind, MemoryEntry } from "./types/narrative.js";
 export { appendToMemory } from "./engine/narrative/narrative.js";

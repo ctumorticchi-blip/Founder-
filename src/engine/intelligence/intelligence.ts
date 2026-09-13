@@ -6,9 +6,11 @@ import type {
   Estimate,
   MarketEstimate,
   MarketShareLevel,
+  SegmentAvailabilityEstimate,
 } from "../../types/intelligence.js";
 import type { Market } from "../../types/market.js";
 import type { Competitor } from "../../types/competition.js";
+import type { SegmentAvailability } from "../../types/demand.js";
 
 /**
  * Incertitude relative minimale (spec §3.5, §9) : même à compétence
@@ -104,4 +106,22 @@ export function projectCompetitorView(
     positionLevel: bucketCompetitivePosition(noisyQuality.value),
     shareLevel: bucketMarketShare(noisyShare.value),
   };
+}
+
+/**
+ * Projette la disponibilité de chaque segment (`computeSegmentAvailability`,
+ * `engine/market/demand.ts`) vers ce que le joueur en perçoit (spec
+ * M11.2.6.2 §2) : `availableMarket` passe par `estimate()` (bruit jamais
+ * nul), le segment lui-même n'est jamais bruité.
+ */
+export function projectSegmentAvailabilityView(
+  availability: readonly SegmentAvailability[],
+  skillAverage0To100: number,
+  rng: Rng,
+): readonly SegmentAvailabilityEstimate[] {
+  return availability.map((segment) => ({
+    segmentId: segment.segmentId,
+    segmentLabel: segment.segmentLabel,
+    availableMarket: estimate(segment.availableMarket, skillAverage0To100, rng.fork(`segment:${segment.segmentId}`)),
+  }));
 }

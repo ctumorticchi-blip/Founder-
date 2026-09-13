@@ -34,3 +34,15 @@ export interface CompetitorView {
   readonly positionLevel: CompetitivePositionLevel;
   readonly shareLevel: MarketShareLevel;
 }
+
+/**
+ * Projection bruitée d'un `SegmentAvailability` (types/demand.ts) pour le
+ * joueur (spec M11.2.6.2 §1) — une fourchette, jamais un nombre brut. Le
+ * segment (id/libellé) n'est jamais bruité, seule sa taille adressable
+ * l'est.
+ */
+export interface SegmentAvailabilityEstimate {
+  readonly segmentId: string;
+  readonly segmentLabel: string;
+  readonly availableMarket: Estimate;
+}

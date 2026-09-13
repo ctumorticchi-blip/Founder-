@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../../../src/engine/rng/rng.js";
-import { projectCompetitorView, projectMarketView } from "../../../src/engine/intelligence/intelligence.js";
+import { projectCompetitorView, projectMarketView, projectSegmentAvailabilityView } from "../../../src/engine/intelligence/intelligence.js";
 import type { Market } from "../../../src/types/market.js";
 import type { Competitor } from "../../../src/types/competition.js";
+import type { SegmentAvailability } from "../../../src/types/demand.js";
 
 const MARKET: Market = {
   id: "nettoyage-local",
@@ -139,5 +140,44 @@ describe("projectCompetitorView", () => {
     // pile à la frontière, les deux paliers voisins doivent apparaître.
     expect(levels.has("standard")).toBe(true);
     expect(levels.has("premium")).toBe(true);
+  });
+});
+
+const SEGMENT_AVAILABILITY: readonly SegmentAvailability[] = [
+  { segmentId: "seg-a", segmentLabel: "Segment A", availableMarket: 1_000 },
+  { segmentId: "seg-b", segmentLabel: "Segment B", availableMarket: 500 },
+];
+
+describe("projectSegmentAvailabilityView", () => {
+  it("est déterministe : même seed + mêmes compétences -> même vue", () => {
+    const a = projectSegmentAvailabilityView(SEGMENT_AVAILABILITY, 50, createRng(1));
+    const b = projectSegmentAvailabilityView(SEGMENT_AVAILABILITY, 50, createRng(1));
+    expect(a).toEqual(b);
+  });
+
+  it("une entrée par segment fourni, dans le même ordre, identité/libellé jamais bruités", () => {
+    const views = projectSegmentAvailabilityView(SEGMENT_AVAILABILITY, 50, createRng(1));
+    expect(views).toHaveLength(2);
+    expect(views[0]!.segmentId).toBe("seg-a");
+    expect(views[0]!.segmentLabel).toBe("Segment A");
+    expect(views[1]!.segmentId).toBe("seg-b");
+    expect(views[1]!.segmentLabel).toBe("Segment B");
+  });
+
+  it("l'incertitude diminue quand les compétences augmentent, sans jamais atteindre 0", () => {
+    const novice = projectSegmentAvailabilityView(SEGMENT_AVAILABILITY, 1, createRng(1));
+    const expert = projectSegmentAvailabilityView(SEGMENT_AVAILABILITY, 100, createRng(1));
+    expect(expert[0]!.availableMarket.uncertainty).toBeLessThan(novice[0]!.availableMarket.uncertainty);
+    expect(expert[0]!.availableMarket.uncertainty).toBeGreaterThan(0);
+  });
+
+  it("deux segments différents ne produisent pas la même estimation bruitée", () => {
+    const rng = createRng(4);
+    const views = projectSegmentAvailabilityView(SEGMENT_AVAILABILITY, 50, rng);
+    expect(views[0]!.availableMarket.value).not.toBe(views[1]!.availableMarket.value);
+  });
+
+  it("un tableau vide de segments renvoie un tableau vide sans exception", () => {
+    expect(projectSegmentAvailabilityView([], 50, createRng(1))).toEqual([]);
   });
 });
