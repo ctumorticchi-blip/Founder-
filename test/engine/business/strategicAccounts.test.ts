@@ -3,12 +3,17 @@ import { createRng } from "../../../src/engine/rng/rng.js";
 import {
   MAX_ACTIVE_STRATEGIC_ACCOUNT_OPPORTUNITIES_PER_BUSINESS,
   advanceStrategicAccountOpportunities,
+  allocateContractOutcomes,
   applyResearchHours,
   applyStrategicAccountActions,
   computeBudgetEstimate,
+  computeContractedVolumeForOffer,
+  computeContractualCapacityAllocation,
+  computeContractualDemandAdjustment,
   deriveTrueOpportunityBudget,
   findEligibleStrategicAccountSlots,
   resolveAccountNegotiationDecision,
+  wonOpportunitiesForOffer,
 } from "../../../src/engine/business/strategicAccounts.js";
 import type { Offer } from "../../../src/types/offer.js";
 import type { AccountProposal, StrategicAccountOpportunity } from "../../../src/types/strategicAccount.js";
@@ -365,5 +370,105 @@ describe("applyStrategicAccountActions (spec M11.2.4.2 §6, §8)", () => {
     expect(afterPropose!.status).toBe("negotiating");
     const [afterAccept] = applyStrategicAccountActions([afterPropose!], [{ kind: "accept", opportunityId: opp.id }], "agency", DATE);
     expect(afterAccept!.status).toBe("won");
+  });
+});
+
+describe("computeContractedVolumeForOffer / wonOpportunitiesForOffer (spec M11.2.4.3 §2)", () => {
+  const won = (id: string, offerId: string, volume: number) =>
+    makeOpportunity({ id, offerId, status: "won", contract: { price: 100, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining: 6, signedAt: DATE } });
+
+  it("somme le volume contracté uniquement des opportunités 'won' de l'offre visée", () => {
+    const opportunities = [
+      won("a", "o1", 30),
+      won("b", "o1", 20),
+      won("c", "o2", 999), // autre offre, ne doit pas compter
+      makeOpportunity({ id: "d", offerId: "o1", status: "negotiating" }), // pas won, ne doit pas compter
+    ];
+    expect(computeContractedVolumeForOffer(opportunities, "o1")).toBe(50);
+  });
+
+  it("aucune opportunité won pour l'offre -> volume nul", () => {
+    expect(computeContractedVolumeForOffer([makeOpportunity({ offerId: "autre-offre" })], "o1")).toBe(0);
+  });
+
+  it("wonOpportunitiesForOffer filtre exactement les mêmes opportunités que la somme ci-dessus", () => {
+    const a = won("a", "o1", 30);
+    const b = won("b", "o1", 20);
+    const other = won("c", "o2", 999);
+    expect(wonOpportunitiesForOffer([a, b, other], "o1")).toEqual([a, b]);
+  });
+});
+
+describe("computeContractualDemandAdjustment (spec M11.2.4 §2 — 4 exemples chiffrés exacts)", () => {
+  it("exemple 1 — contrat inférieur à la demande agrégée : reclassement pur", () => {
+    const r = computeContractualDemandAdjustment(100, 60);
+    expect(r.overlap).toBe(60);
+    expect(r.incremental).toBe(0);
+    expect(r.adjustedSegmentDemand).toBe(40);
+  });
+  it("exemple 2 — contrat supérieur à la demande agrégée : incrément réel", () => {
+    const r = computeContractualDemandAdjustment(100, 250);
+    expect(r.overlap).toBe(100);
+    expect(r.incremental).toBe(150);
+    expect(r.adjustedSegmentDemand).toBe(0);
+  });
+  it("jamais de demande négative (overlap borné par min)", () => {
+    const r = computeContractualDemandAdjustment(0, 500);
+    expect(r.adjustedSegmentDemand).toBe(0);
+    expect(r.incremental).toBe(500);
+  });
+});
+
+describe("computeContractualCapacityAllocation (spec M11.2.4 §2-§3 — exemples 3-4)", () => {
+  it("exemple 3 — capacité suffisante : tout est servi, aucune perte", () => {
+    // aggregateDemand=100, contract=60 -> overlap=60, adjustedSegmentDemand=40 ; +repeatDemand=20 -> newRepeatTotalDemand=60
+    const r = computeContractualCapacityAllocation({ newRepeatTotalDemand: 60, contractedVolume: 60, capacityForOffer: 200 });
+    expect(r.totalDemandIncludingContractual).toBe(120);
+    expect(r.actualSales).toBe(120);
+    expect(r.lostToCapacity).toBe(0);
+    expect(r.contractualSales).toBeCloseTo(60);
+    expect(r.newRepeatSales).toBeCloseTo(60);
+  });
+
+  it("exemple 4 — surcharge : le grand compte perd EXACTEMENT la même proportion que new/repeat (spec §3, valeurs exactes)", () => {
+    // adjustedAggregateDemand=40, repeatDemand=20 -> newRepeatTotalDemand=60 ; contractedVolume=60 ; capacité=60
+    const r = computeContractualCapacityAllocation({ newRepeatTotalDemand: 60, contractedVolume: 60, capacityForOffer: 60 });
+    expect(r.totalDemandIncludingContractual).toBe(120);
+    expect(r.actualSales).toBe(60);
+    expect(r.lostToCapacity).toBe(60);
+    expect(r.contractualSales).toBeCloseTo(30); // 60 * (60/120) = 30, exactement 50% comme new/repeat
+    expect(r.newRepeatSales).toBeCloseTo(30);
+    expect(r.unservedContractual).toBeCloseTo(30);
+    expect(r.newRepeatLost).toBeCloseTo(30);
+  });
+
+  it("conservation garantie par construction, sur un cas quelconque", () => {
+    const r = computeContractualCapacityAllocation({ newRepeatTotalDemand: 137, contractedVolume: 83, capacityForOffer: 150 });
+    expect(r.contractualSales + r.newRepeatSales).toBeCloseTo(r.actualSales);
+    expect(r.unservedContractual + r.newRepeatLost).toBeCloseTo(r.lostToCapacity);
+    expect(r.actualSales + r.lostToCapacity).toBeCloseTo(r.totalDemandIncludingContractual);
+  });
+
+  it("totalDemand nul -> toutes les parts nulles, jamais de division par zéro", () => {
+    const r = computeContractualCapacityAllocation({ newRepeatTotalDemand: 0, contractedVolume: 0, capacityForOffer: 100 });
+    expect(r.contractualSales).toBe(0);
+    expect(r.newRepeatSales).toBe(0);
+    expect(r.lostToCapacity).toBe(0);
+  });
+});
+
+describe("allocateContractOutcomes (spec M11.2.4 §10)", () => {
+  it("répartit proportionnellement au volume propre de chaque contrat, jamais de priorité entre comptes", () => {
+    const opp = (id: string, volume: number, price: number) =>
+      makeOpportunity({ id, status: "won", contract: { price, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining: 6, signedAt: DATE } });
+    const outcomes = allocateContractOutcomes([opp("a", 30, 100), opp("b", 70, 200)], 50, 10, 100);
+    expect(outcomes[0]!.servedVolume).toBeCloseTo(15); // 50 * 30/100
+    expect(outcomes[1]!.servedVolume).toBeCloseTo(35); // 50 * 70/100
+    expect(outcomes[0]!.unservedVolume).toBeCloseTo(3); // 10 * 30/100
+    expect(outcomes[0]!.revenue).toBeCloseTo(1500); // 15 * 100
+    expect(outcomes[1]!.revenue).toBeCloseTo(7000); // 35 * 200
+  });
+  it("contractedVolume nul -> tableau vide, jamais une division par zéro", () => {
+    expect(allocateContractOutcomes([], 0, 0, 0)).toEqual([]);
   });
 });

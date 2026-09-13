@@ -249,6 +249,112 @@ export function applyResearchHours(opportunity: StrategicAccountOpportunity, hou
   };
 }
 
+/** Opportunités `"won"` (contrat signé) rattachées à une offre précise (spec M11.2.4.3 §2). */
+export function wonOpportunitiesForOffer(
+  opportunities: readonly StrategicAccountOpportunity[],
+  offerId: string,
+): readonly StrategicAccountOpportunity[] {
+  return opportunities.filter((o) => o.offerId === offerId && o.status === "won" && o.contract !== null);
+}
+
+/** Somme du volume contractuel déjà signé pour une offre (spec §2) — `0` si aucun contrat won. */
+export function computeContractedVolumeForOffer(opportunities: readonly StrategicAccountOpportunity[], offerId: string): number {
+  return wonOpportunitiesForOffer(opportunities, offerId).reduce((sum, o) => sum + o.contract!.volume, 0);
+}
+
+/**
+ * Ajustement du funnel de demande agrégée pour retirer le chevauchement
+ * avec le volume contractuel (spec §2, formule prouvée) : `overlap` est la
+ * part du contrat déjà comptée dans la demande agrégée du segment ciblé
+ * (reclassement pur, aucun double comptage) ; `incremental` est la part du
+ * contrat qui EXCÈDE la demande agrégée (demande réellement nouvelle,
+ * apportée par la relation commerciale directe).
+ */
+export interface ContractualDemandAdjustment {
+  readonly overlap: number;
+  readonly incremental: number;
+  readonly adjustedSegmentDemand: number;
+}
+export function computeContractualDemandAdjustment(aggregateDemandForSegment: number, contractedVolume: number): ContractualDemandAdjustment {
+  const overlap = Math.min(aggregateDemandForSegment, contractedVolume);
+  return {
+    overlap,
+    incremental: contractedVolume - overlap,
+    adjustedSegmentDemand: aggregateDemandForSegment - overlap,
+  };
+}
+
+/**
+ * Allocation de capacité à 3 flux (new/repeat/contractuel) SANS priorité
+ * cachée (spec §3, formule prouvée) : chaque flux perd exactement la même
+ * proportion de sa propre demande en cas de surcharge — jamais de flux
+ * privilégié. Fonction pure, aucune division par zéro (`totalDemand = 0`
+ * -> toutes les parts nulles).
+ */
+export interface ContractualCapacityAllocation {
+  readonly totalDemandIncludingContractual: number;
+  readonly actualSales: number;
+  readonly lostToCapacity: number;
+  readonly contractualSales: number;
+  readonly unservedContractual: number;
+  readonly newRepeatSales: number;
+  readonly newRepeatLost: number;
+}
+export function computeContractualCapacityAllocation(params: {
+  readonly newRepeatTotalDemand: number;
+  readonly contractedVolume: number;
+  readonly capacityForOffer: number;
+}): ContractualCapacityAllocation {
+  const { newRepeatTotalDemand, contractedVolume, capacityForOffer } = params;
+  const totalDemandIncludingContractual = newRepeatTotalDemand + contractedVolume;
+  const actualSales = Math.min(totalDemandIncludingContractual, capacityForOffer);
+  const lostToCapacity = Math.max(0, totalDemandIncludingContractual - capacityForOffer);
+  const shareContractual = totalDemandIncludingContractual > 0 ? contractedVolume / totalDemandIncludingContractual : 0;
+  const contractualSales = actualSales * shareContractual;
+  const unservedContractual = lostToCapacity * shareContractual;
+  return {
+    totalDemandIncludingContractual,
+    actualSales,
+    lostToCapacity,
+    contractualSales,
+    unservedContractual,
+    newRepeatSales: actualSales - contractualSales,
+    newRepeatLost: lostToCapacity - unservedContractual,
+  };
+}
+
+/**
+ * Répartit `contractualSales`/`unservedContractual` (agrégés, toutes
+ * relations confondues sur l'offre) entre les contrats individuels
+ * proportionnellement au `volume` propre de chacun (spec §10) — jamais de
+ * priorité entre comptes gagnés sur la même offre.
+ */
+export interface ContractOutcome {
+  readonly opportunityId: string;
+  readonly servedVolume: number;
+  readonly unservedVolume: number;
+  readonly revenue: number;
+}
+export function allocateContractOutcomes(
+  wonOpportunities: readonly StrategicAccountOpportunity[],
+  contractualSales: number,
+  unservedContractual: number,
+  contractedVolume: number,
+): readonly ContractOutcome[] {
+  if (contractedVolume <= 0) return [];
+  return wonOpportunities.map((opportunity) => {
+    const contract = opportunity.contract!;
+    const share = contract.volume / contractedVolume;
+    const servedVolume = contractualSales * share;
+    return {
+      opportunityId: opportunity.id,
+      servedVolume,
+      unservedVolume: unservedContractual * share,
+      revenue: servedVolume * contract.price,
+    };
+  });
+}
+
 /**
  * Applique une série d'actions joueur (temps investi/négociation) sur une
  * liste d'opportunités (spec §6, §8) — une par une, dans l'ordre fourni,
