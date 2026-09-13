@@ -53,6 +53,9 @@ export interface AccountContract {
   readonly durationMonths: number;
   readonly monthsRemaining: number;
   readonly signedAt: GameDate;
+  /** Volume RÉELLEMENT livré/perdu le mois dernier (spec M11.2.4.3 §5) — `0` par défaut à la signature, jamais mesuré avant l'intégration économique (M11.2.4.3). */
+  readonly lastMonthServedVolume: number;
+  readonly lastMonthUnservedVolume: number;
 }
 
 /** Action du joueur sur une opportunité de compte stratégique, ce mois-ci (spec §6, §8). */

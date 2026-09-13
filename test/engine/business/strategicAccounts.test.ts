@@ -264,7 +264,7 @@ describe("resolveAccountNegotiationDecision (spec M11.2.4.2 §8)", () => {
     };
     const result = resolveAccountNegotiationDecision(opp, "agency", { action: "propose", proposal }, DATE);
     expect(result.status).toBe("won");
-    expect(result.contract).toEqual({ ...proposal, monthsRemaining: 6, signedAt: DATE });
+    expect(result.contract).toEqual({ ...proposal, monthsRemaining: 6, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 });
     expect(result.lastAccountProposal).toBeNull();
   });
 
@@ -375,7 +375,12 @@ describe("applyStrategicAccountActions (spec M11.2.4.2 §6, §8)", () => {
 
 describe("computeContractedVolumeForOffer / wonOpportunitiesForOffer (spec M11.2.4.3 §2)", () => {
   const won = (id: string, offerId: string, volume: number) =>
-    makeOpportunity({ id, offerId, status: "won", contract: { price: 100, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining: 6, signedAt: DATE } });
+    makeOpportunity({
+      id,
+      offerId,
+      status: "won",
+      contract: { price: 100, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining: 6, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 },
+    });
 
   it("somme le volume contracté uniquement des opportunités 'won' de l'offre visée", () => {
     const opportunities = [
@@ -460,7 +465,11 @@ describe("computeContractualCapacityAllocation (spec M11.2.4 §2-§3 — exemple
 describe("allocateContractOutcomes (spec M11.2.4 §10)", () => {
   it("répartit proportionnellement au volume propre de chaque contrat, jamais de priorité entre comptes", () => {
     const opp = (id: string, volume: number, price: number) =>
-      makeOpportunity({ id, status: "won", contract: { price, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining: 6, signedAt: DATE } });
+      makeOpportunity({
+        id,
+        status: "won",
+        contract: { price, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining: 6, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 },
+      });
     const outcomes = allocateContractOutcomes([opp("a", 30, 100), opp("b", 70, 200)], 50, 10, 100);
     expect(outcomes[0]!.servedVolume).toBeCloseTo(15); // 50 * 30/100
     expect(outcomes[1]!.servedVolume).toBeCloseTo(35); // 50 * 70/100

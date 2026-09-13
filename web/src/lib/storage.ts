@@ -145,8 +145,22 @@ function migrateStrategicAccountOpportunity(opportunity: StrategicAccountOpportu
     ...opportunity,
     researchHoursInvested,
     lastAccountProposal: opportunity.lastAccountProposal ?? null,
-    contract: opportunity.contract ?? null,
+    contract: opportunity.contract ? migrateAccountContract(opportunity.contract) : null,
     budgetEstimate: opportunity.budgetEstimate ?? computeBudgetEstimate(opportunity.id, referencePrice, researchHoursInvested),
+  };
+}
+
+/**
+ * Complète un contrat signé antérieur à M11.2.4.3 avec les 2 champs
+ * d'exécution mensuelle (spec M11.2.4.3 §5) — `0` signifie "aucune
+ * exécution mesurée encore", jamais un historique de livraison fabriqué.
+ */
+function migrateAccountContract(contract: StrategicAccountOpportunity["contract"]): StrategicAccountOpportunity["contract"] {
+  if (!contract) return null;
+  return {
+    ...contract,
+    lastMonthServedVolume: contract.lastMonthServedVolume ?? 0,
+    lastMonthUnservedVolume: contract.lastMonthUnservedVolume ?? 0,
   };
 }
 

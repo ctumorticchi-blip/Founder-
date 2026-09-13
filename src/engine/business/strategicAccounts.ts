@@ -182,6 +182,8 @@ function signContract(opportunity: StrategicAccountOpportunity, proposal: Accoun
       durationMonths: proposal.durationMonths,
       monthsRemaining: proposal.durationMonths,
       signedAt: date,
+      lastMonthServedVolume: 0,
+      lastMonthUnservedVolume: 0,
     },
   };
 }

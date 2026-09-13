@@ -479,6 +479,52 @@ describe("migrateSaveGame", () => {
     expect(opportunity.budgetEstimate.price.uncertainty).toBeGreaterThan(0);
   });
 
+  it("un contrat signé M11.2.4.2 (sans lastMonthServedVolume/lastMonthUnservedVolume) est complété à 0, jamais un historique de livraison fabriqué (spec M11.2.4.3 §5)", () => {
+    const alreadyMigrated = migrateSaveGame(LEGACY_M10_SAVE);
+    const legacyContractSave = {
+      ...alreadyMigrated,
+      gameState: {
+        ...alreadyMigrated.gameState,
+        businesses: [
+          {
+            ...alreadyMigrated.gameState.businesses[0]!,
+            familyState: { family: "service" as const, reputationScore: 0.5, costPerLaborHour: 8 },
+            strategicAccountOpportunities: [
+              {
+                id: "biz-1:offer-1:service-entreprises-exigeantes:24305",
+                businessId: "service-abc123",
+                offerId: "offer-1",
+                segmentId: "service-entreprises-exigeantes",
+                companyName: "Groupe Meridien",
+                contactName: "Camille Marchand",
+                contactRole: "Directrice générale",
+                source: "network",
+                discoveredAt: { year: 2025, month: 6 },
+                status: "won",
+                researchHoursInvested: 20,
+                lastAccountProposal: null,
+                contract: {
+                  price: 12_000,
+                  volume: 40,
+                  qualityCommitment: 70,
+                  durationMonths: 6,
+                  monthsRemaining: 6,
+                  signedAt: { year: 2025, month: 6 },
+                  // lastMonthServedVolume/lastMonthUnservedVolume absents : sauvegarde M11.2.4.2.
+                },
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const migrated = migrateSaveGame(legacyContractSave);
+    const contract = migrated.gameState.businesses[0]!.strategicAccountOpportunities[0]!.contract!;
+    expect(contract.lastMonthServedVolume).toBe(0);
+    expect(contract.lastMonthUnservedVolume).toBe(0);
+    expect(contract.volume).toBe(40);
+  });
+
   it("la migration M11.2.4.2 est idempotente (researchHoursInvested/budgetEstimate stables sur double passage)", () => {
     const alreadyMigrated = migrateSaveGame(LEGACY_M10_SAVE);
     const legacyOpportunitySave = {
