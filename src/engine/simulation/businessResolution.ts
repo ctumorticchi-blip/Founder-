@@ -680,6 +680,11 @@ export function resolveBusinessMonth(
       let totalNewSubscribers = 0;
       const demandById = new Map<string, DemandFunnelResult>();
       const funnelById = new Map<string, Omit<DemandFunnelResult, "capacity" | "sales" | "lostToCapacity">>();
+      // Allocation contractuelle par offre (spec M11.2.4.3, décision 7) —
+      // relue par le second passage ci-dessous pour n'attribuer à
+      // resolveOfferOutcome que la part new/repeat (jamais contractuelle,
+      // décision 8 : réputation encore new+repeat uniquement).
+      const allocationById = new Map<string, ReturnType<typeof computeContractualCapacityAllocation>>();
       for (const offer of launchedOffers) {
         const priorWordOfMouth = aggregateWordOfMouthInputs(offer.customerMemory);
         const organicWordOfMouth = computeWordOfMouth(priorWordOfMouth.satisfaction, priorWordOfMouth.volume, subscriptionReferenceVolume);
@@ -690,12 +695,35 @@ export function resolveBusinessMonth(
           date,
           organicWordOfMouth,
         });
-        totalNewSubscribers += funnel.demand;
-        funnelById.set(offer.id, funnel);
-        // `computeSubscriptionMonth` n'a aucun plafond d'admission (vérifié
-        // à la lecture, spec §6.2) : le funnel le reflète honnêtement au
-        // lieu d'inventer une capacité qui n'existe pas dans le moteur.
-        demandById.set(offer.id, { ...funnel, capacity: Infinity, sales: funnel.demand, lostToCapacity: 0 });
+        // `computeSubscriptionMonth` n'a aucun plafond d'admission (vérifié à
+        // la lecture, spec §6.2) : `capacityForOffer = Infinity` fait
+        // dégénérer `computeContractualCapacityAllocation` exactement comme
+        // voulu par la décision 7 — tout le volume contractuel est servi
+        // (`contractualSales = contractedVolume`), jamais de
+        // `unservedContractual` pour cette famille (cohérent avec « aucun
+        // plafond d'admission »).
+        const { adjustedFunnel, allocation, contractedVolume, wonOpportunities } = integrateContractualDemand(
+          funnel,
+          EMPTY_REPEAT_DEMAND,
+          offer,
+          Infinity,
+          owned.strategicAccountOpportunities,
+        );
+        totalNewSubscribers += allocation.totalDemandIncludingContractual;
+        funnelById.set(offer.id, adjustedFunnel);
+        allocationById.set(offer.id, allocation);
+        // CA volontairement PAS corrigé au prix du contrat (décision 7,
+        // limitation documentée) : `revenue` reste `endingSubscribers × arpu`
+        // générique pour tous les abonnés, contrat compris — seul le VOLUME
+        // est intégré fidèlement (overlap/incremental).
+        const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
+        demandById.set(offer.id, {
+          ...adjustedFunnel,
+          capacity: Infinity,
+          sales: allocation.totalDemandIncludingContractual,
+          lostToCapacity: 0,
+        });
       }
       // Premier lancé (ordre de création) fixe le tarif du pool mono-tarif
       // actuel (spec §6.2) — corrige la limitation M11.2.1 où le prix de
@@ -720,6 +748,7 @@ export function resolveBusinessMonth(
       const memoryById = new Map<string, readonly SegmentCustomerMemory[]>();
       for (const offer of launchedOffers) {
         const funnel = funnelById.get(offer.id)!;
+        const allocation = allocationById.get(offer.id)!;
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         // Pas de plafond de capacité par offre en Subscription (spec §6.2) :
         // toute la demande captée est réputée servie. Pas de repeat demand
@@ -727,7 +756,20 @@ export function resolveBusinessMonth(
         // mécanique de rétention de Subscription est `activeSubscribers`
         // (acquisition/churn ci-dessus), pas cette mémoire par segment — la
         // `Map` vide fait absorber 100% du flux par `newVolumeThisMonth`.
-        const outcome = resolveOfferOutcome(offer, segments, funnel, EMPTY_REPEAT_DEMAND, deliveredExperience, operationalPenalty, funnel.demand, 0, state.reputationScore);
+        // `newRepeatSales` (jamais le volume contractuel, décision 8) :
+        // réputation encore new+repeat uniquement tant qu'aucun signal de
+        // satisfaction de compte n'existe (M11.2.4.4).
+        const outcome = resolveOfferOutcome(
+          offer,
+          segments,
+          funnel,
+          EMPTY_REPEAT_DEMAND,
+          deliveredExperience,
+          operationalPenalty,
+          allocation.newRepeatSales,
+          allocation.newRepeatLost,
+          state.reputationScore,
+        );
         memoryById.set(offer.id, outcome.updatedMemory);
         totalVolumeForReputation += outcome.volumeForReputation;
         reputationEntries.push({ value: outcome.satisfactionForReputation, weight: outcome.volumeForReputation });

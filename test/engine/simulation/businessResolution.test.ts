@@ -787,3 +787,122 @@ describe("Contract Execution — intégration réelle (spec M11.2.4.3)", () => {
     expect(b.updated.strategicAccountOpportunities).toEqual([]);
   });
 });
+
+describe("Contract Execution — Subscription (spec M11.2.4.3 décision 7 : volume intégral, AUCUN swap de prix)", () => {
+  // Segment "subscription" marqué strategicAccountsEligible, referencePrice=49, preferredPositioning="premium".
+  const CONTRACT_SEGMENT_ID = "subscription-equipes-etablies";
+  const OFFER_PRICE = 45;
+  const SUB_RNG_SEED = 11;
+
+  function subscriptionContractOfferActions(): OfferAction[] {
+    return [
+      {
+        kind: "create",
+        spec: { id: "sub-offer", name: "Abonnement équipes", businessModel: "service-hours", positioning: "premium", targetSegment: CONTRACT_SEGMENT_ID, price: OFFER_PRICE },
+      },
+      { kind: "launch", offerId: "sub-offer" },
+    ];
+  }
+
+  function wonSubscriptionOpportunity(volume: number, price: number, monthsRemaining = 6): StrategicAccountOpportunity {
+    return {
+      id: "sub:sub-offer:won-1",
+      businessId: "sub",
+      offerId: "sub-offer",
+      segmentId: CONTRACT_SEGMENT_ID,
+      companyName: "Atelier Voss",
+      contactName: "Inès Lefranc",
+      contactRole: "Directrice des opérations",
+      source: "inbound",
+      discoveredAt: DATE,
+      status: "won",
+      researchHoursInvested: 40,
+      budgetEstimate: {
+        price: { value: price, uncertainty: 0 },
+        volume: { value: volume, uncertainty: 0 },
+        qualityCommitment: { value: 60, uncertainty: 0 },
+      },
+      lastAccountProposal: null,
+      contract: { price, volume, qualityCommitment: 60, durationMonths: 6, monthsRemaining, signedAt: DATE, lastMonthServedVolume: 0, lastMonthUnservedVolume: 0 },
+    };
+  }
+
+  function subscriptionContractAction(overrides: Partial<BusinessAction> = {}): BusinessAction {
+    return {
+      businessId: "sub",
+      founderHoursAllocated: 100,
+      founderProspectionHoursAllocated: 0,
+      offerActions: subscriptionContractOfferActions(),
+      decisions: { family: "subscription" },
+      marketingBudget: 0,
+      rentBudget: 0,
+      adminBudget: 0,
+      headcountCapacity: Number.POSITIVE_INFINITY,
+      storageCapacity: Number.POSITIVE_INFINITY,
+      targetHeadcount: 4,
+      ...overrides,
+    };
+  }
+
+  function subscriptionOrganicBaseline() {
+    const owned = createOwnedBusiness("sub", SUBSCRIPTION_SPEC);
+    return resolveBusinessMonth(owned, subscriptionContractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(SUB_RNG_SEED), DATE, SUBSCRIPTION_MARKET);
+  }
+
+  it("un contrat Subscription n'est JAMAIS perdu à la capacité (capacité infinie, spec §6.2) : lastMonthUnservedVolume toujours 0", () => {
+    const owned = createOwnedBusiness("sub", SUBSCRIPTION_SPEC);
+    const ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonSubscriptionOpportunity(500, OFFER_PRICE * 5)] };
+    const result = resolveBusinessMonth(ownedWithContract, subscriptionContractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(SUB_RNG_SEED), DATE, SUBSCRIPTION_MARKET);
+    const contract = result.updated.strategicAccountOpportunities[0]!.contract!;
+    expect(contract.lastMonthUnservedVolume).toBe(0);
+    expect(contract.lastMonthServedVolume).toBeCloseTo(500, 6);
+    expect(contract.monthsRemaining).toBe(5);
+  });
+
+  it("contrat <= demande organique déjà présente du segment -> reclassement pur, AUCUN double comptage (nombre total de nouveaux abonnés inchangé)", () => {
+    const baseline = subscriptionOrganicBaseline();
+    const baselineSegment = baseline.updated.business.offers[0]!.lastDemand!.bySegment.find((s) => s.segmentId === CONTRACT_SEGMENT_ID)!;
+    expect(baselineSegment.demand).toBeGreaterThan(0);
+
+    const contractVolume = baselineSegment.demand * 0.5; // <= demande organique -> overlap pur
+    const owned = createOwnedBusiness("sub", SUBSCRIPTION_SPEC);
+    const ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonSubscriptionOpportunity(contractVolume, OFFER_PRICE * 10)] };
+    const result = resolveBusinessMonth(ownedWithContract, subscriptionContractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(SUB_RNG_SEED), DATE, SUBSCRIPTION_MARKET);
+
+    if (baseline.updated.familyState.family !== "subscription" || result.updated.familyState.family !== "subscription") {
+      throw new Error("familyState devrait rester 'subscription'");
+    }
+    expect(result.updated.familyState.activeSubscribers).toBeCloseTo(baseline.updated.familyState.activeSubscribers, 6);
+  });
+
+  it("contrat > demande organique du segment -> incrément réel, la base d'abonnés croît exactement de l'incrément", () => {
+    const baseline = subscriptionOrganicBaseline();
+    const baselineSegment = baseline.updated.business.offers[0]!.lastDemand!.bySegment.find((s) => s.segmentId === CONTRACT_SEGMENT_ID)!;
+
+    const contractVolume = baselineSegment.demand * 3; // > demande organique -> incrément = contractVolume - baselineSegment.demand
+    const expectedIncrement = contractVolume - baselineSegment.demand;
+    const owned = createOwnedBusiness("sub", SUBSCRIPTION_SPEC);
+    const ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonSubscriptionOpportunity(contractVolume, OFFER_PRICE * 10)] };
+    const result = resolveBusinessMonth(ownedWithContract, subscriptionContractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(SUB_RNG_SEED), DATE, SUBSCRIPTION_MARKET);
+
+    if (baseline.updated.familyState.family !== "subscription" || result.updated.familyState.family !== "subscription") {
+      throw new Error("familyState devrait rester 'subscription'");
+    }
+    expect(result.updated.familyState.activeSubscribers - baseline.updated.familyState.activeSubscribers).toBeCloseTo(expectedIncrement, 3);
+  });
+
+  it("le CA reste EXACTEMENT au tarif générique de l'offre, jamais corrigé au prix du contrat (décision 7, limitation documentée)", () => {
+    const baseline = subscriptionOrganicBaseline();
+    const baselineSegment = baseline.updated.business.offers[0]!.lastDemand!.bySegment.find((s) => s.segmentId === CONTRACT_SEGMENT_ID)!;
+    const contractVolume = baselineSegment.demand * 3;
+    const contractPrice = OFFER_PRICE * 20; // prix très différent : un swap accidentel serait immédiatement visible.
+    const owned = createOwnedBusiness("sub", SUBSCRIPTION_SPEC);
+    const ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonSubscriptionOpportunity(contractVolume, contractPrice)] };
+    const result = resolveBusinessMonth(ownedWithContract, subscriptionContractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(SUB_RNG_SEED), DATE, SUBSCRIPTION_MARKET);
+
+    // `computeSubscriptionMonth` facture `activeSubscribers (début de mois) × arpu` — strictement
+    // indépendant de `newSubscribers`/du contrat ce mois-ci (revenu identique quel que soit le contrat).
+    expect(result.statement.revenue).toBe(baseline.statement.revenue);
+    expect(result.statement.variableCosts).toBe(baseline.statement.variableCosts);
+  });
+});
