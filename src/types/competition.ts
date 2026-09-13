@@ -23,6 +23,9 @@ export interface Competitor {
   readonly name: string;
   readonly marketId: string;
   readonly tier: CompetitorTier;
-  /** Force globale du concurrent, 0-1 (taille, capacités, ressources). */
+  /** Force globale du concurrent, 0-1 (taille, capacités, ressources) — un
+   * poids relatif, PAS une part de marché (voir `computeCompetitorMarketShare`). */
   readonly strength: number;
+  /** Qualité/positionnement perçu du concurrent, 0-1 (spec M11.2.5 §1-§2). */
+  readonly qualityLevel: number;
 }
