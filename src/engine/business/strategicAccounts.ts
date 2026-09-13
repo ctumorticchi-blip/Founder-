@@ -160,6 +160,7 @@ export function advanceStrategicAccountOpportunities(params: {
       budgetEstimate: computeBudgetEstimate(id, referencePriceFor(slot.segmentId, family), 0),
       lastAccountProposal: null,
       contract: null,
+      relationship: null,
     });
     active += 1;
   }
@@ -185,6 +186,7 @@ function signContract(opportunity: StrategicAccountOpportunity, proposal: Accoun
       lastMonthServedVolume: 0,
       lastMonthUnservedVolume: 0,
     },
+    relationship: null,
   };
 }
 

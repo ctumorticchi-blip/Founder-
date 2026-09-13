@@ -1,5 +1,6 @@
 import type { GameDate } from "../engine/time/clock.js";
 import type { Estimate } from "./intelligence.js";
+import type { SatisfactionDiagnosis } from "./satisfaction.js";
 
 /**
  * Source d'une opportunité de compte stratégique (spec M11.2.4 §5,
@@ -58,6 +59,48 @@ export interface AccountContract {
   readonly lastMonthUnservedVolume: number;
 }
 
+/**
+ * Satisfaction individuelle du compte (spec M11.2.4.4 §9) — distincte de
+ * `SegmentCustomerMemory` (clients anonymes) : alimentée par le triplet
+ * qualité/prix habituel ET par la sous-livraison contractuelle du mois.
+ * `scoreThisMonth: null` signifie qu'aucun mois n'a encore été résolu
+ * sous contrat (aucune mesure possible).
+ */
+export interface AccountSatisfactionState {
+  readonly scoreThisMonth: number | null;
+  /** Lissée (EWMA, même alpha que `SegmentCustomerMemory.smoothedSatisfactionScore`). */
+  readonly smoothedScore: number;
+  readonly diagnosisThisMonth: SatisfactionDiagnosis | null;
+}
+
+/**
+ * Instantané mensuel append-only (spec §5, §11 — utilisé par M11.2.4.5
+ * pour le rapport de force) : jamais réécrit, une entrée de plus par mois
+ * résolu sous contrat.
+ */
+export interface AccountHistoryEntry {
+  readonly date: GameDate;
+  readonly servedVolume: number;
+  readonly unservedVolume: number;
+  readonly satisfactionScore: number | null;
+  readonly trust: number;
+}
+
+/**
+ * Relation dynamique compte/offre (spec §9) — `null` tant qu'aucun mois
+ * n'a été résolu sous contrat (opportunité tout juste gagnée). `trust`
+ * (0-1) évolue plus lentement que `satisfaction` (spec §9 : "la confiance
+ * évolue plus lentement"), alimentée par deux sources distinctes
+ * (satisfaction ET fréquence de rupture contractuelle, jamais fusionnées).
+ */
+export interface AccountRelationshipState {
+  readonly satisfaction: AccountSatisfactionState;
+  readonly trust: number;
+  /** Taux de sous-livraison lissé (EWMA), 0-1 — même patron que `availabilityFrustration` (M11.2.3.1 §5), jamais fusionné avec la satisfaction. */
+  readonly breachFrustration: number;
+  readonly history: readonly AccountHistoryEntry[];
+}
+
 /** Action du joueur sur une opportunité de compte stratégique, ce mois-ci (spec §6, §8). */
 export type StrategicAccountAction =
   | { readonly kind: "invest-time"; readonly opportunityId: string; readonly hours: number }
@@ -96,6 +139,8 @@ export interface StrategicAccountOpportunity {
   readonly lastAccountProposal: AccountProposal | null;
   /** Rempli uniquement quand `status === "won"`. */
   readonly contract: AccountContract | null;
+  /** Rempli au premier mois résolu sous contrat (spec M11.2.4.4 §9) — `null` tant qu'aucun mois n'a encore été exécuté. */
+  readonly relationship: AccountRelationshipState | null;
 }
 
 /**

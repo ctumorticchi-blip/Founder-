@@ -246,6 +246,7 @@ function makeOpportunity(overrides: Partial<StrategicAccountOpportunity> = {}): 
     budgetEstimate: computeBudgetEstimate(id, REFERENCE_PRICE, 0),
     lastAccountProposal: null,
     contract: null,
+    relationship: null,
     ...overrides,
   };
 }

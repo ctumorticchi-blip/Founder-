@@ -4,8 +4,13 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Poids de lissage (EWMA) de la satisfaction — assez petit pour qu'un seul mois ne l'écrase pas (spec M11.2.3 §8). */
-const SATISFACTION_EWMA_ALPHA = 0.35;
+/**
+ * Poids de lissage (EWMA) de la satisfaction — assez petit pour qu'un
+ * seul mois ne l'écrase pas (spec M11.2.3 §8). Exportée (M11.2.4.4 §9)
+ * pour que la satisfaction de compte stratégique utilise EXACTEMENT la
+ * même valeur que `SegmentCustomerMemory`, sans dupliquer la constante.
+ */
+export const SATISFACTION_EWMA_ALPHA = 0.35;
 /** Poids de lissage (EWMA) du volume récurrent — même principe d'inertie. */
 const VOLUME_EWMA_ALPHA = 0.4;
 /** Seuils de qualification d'un "bon"/"mauvais" mois pour les compteurs de séries consécutives. */

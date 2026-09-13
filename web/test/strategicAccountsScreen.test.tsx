@@ -179,6 +179,7 @@ describe("Strategic Accounts — négociation (spec M11.2.4.2 §8)", () => {
       },
       lastAccountProposal: { price: 13_500, volume: 42, qualityCommitment: 68, durationMonths: 6 },
       contract: null,
+      relationship: null,
     };
     writeSave({
       ...save,
