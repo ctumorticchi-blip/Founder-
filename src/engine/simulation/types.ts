@@ -9,6 +9,7 @@ import type { GameEvent, MemoryEntry } from "../../types/narrative.js";
 import type { PropertyPurchaseSpec } from "../../types/realEstate.js";
 import type { SaleDecision, SaleProcessState } from "../../types/sale.js";
 import type { OfferAction } from "../../types/offer.js";
+import type { StrategicAccount, StrategicAccountOpportunity } from "../../types/strategicAccount.js";
 
 /** État persistant propre à chaque famille, en plus de `BusinessState`/`WorkforceState` communs. */
 export type BusinessFamilyState =
@@ -74,6 +75,10 @@ export interface OwnedBusiness {
   readonly lastStatement?: MonthlyFinancialStatement;
   /** Processus de cession en cours (spec M11.1.5 §6.2). `null` = aucune cession en cours. */
   readonly saleProcess: SaleProcessState | null;
+  /** Comptes stratégiques confirmés (spec M11.2.4 §5) — toujours `[]` tant que M11.2.4.2 (conversion opportunité -> compte) n'existe pas. */
+  readonly strategicAccounts: readonly StrategicAccount[];
+  /** Opportunités de comptes stratégiques à l'étude (spec M11.2.4.1 §15). */
+  readonly strategicAccountOpportunities: readonly StrategicAccountOpportunity[];
 }
 
 export type CreateBusinessSpec =

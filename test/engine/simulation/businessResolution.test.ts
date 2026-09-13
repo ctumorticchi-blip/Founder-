@@ -95,6 +95,14 @@ describe("createOwnedBusiness — identité (spec M11.1)", () => {
   });
 });
 
+describe("createOwnedBusiness — Strategic Accounts (spec M11.2.4.1 §5)", () => {
+  it("initialise strategicAccounts et strategicAccountOpportunities à [] pour toute nouvelle entreprise", () => {
+    const owned = createOwnedBusiness("biz-1", SERVICE_SPEC);
+    expect(owned.strategicAccounts).toEqual([]);
+    expect(owned.strategicAccountOpportunities).toEqual([]);
+  });
+});
+
 describe("resolveBusinessMonth — effet de capacité (recrutement)", () => {
   it("plus de salariés -> plus d'heures vendues -> plus de revenu (à demande capacity-bound)", () => {
     const owned = createOwnedBusiness("svc", SERVICE_SPEC);

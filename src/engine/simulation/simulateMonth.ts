@@ -8,6 +8,7 @@ import { TIME_CATEGORIES, type SkillName, type TimeCategory } from "../../types/
 import { INSOLVENCY_THRESHOLD_MONTHS } from "../business/treasury.js";
 import { advanceSaleProcess, closeSale, resolveSaleDecision, startSaleProcess } from "../business/sale.js";
 import { computeValuation } from "../business/valuation.js";
+import { advanceStrategicAccountOpportunities } from "../business/strategicAccounts.js";
 import { appendToMemory } from "../narrative/narrative.js";
 import { createOwnedBusiness, resolveBusinessMonth } from "./businessResolution.js";
 import type { GameEvent } from "../../types/narrative.js";
@@ -256,7 +257,15 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
         });
       }
       const finalSaleProcess = saleProcess?.status === "withdrawn" ? null : saleProcess;
-      businesses.push({ ...resolved.updated, saleProcess: finalSaleProcess });
+      const strategicAccountOpportunities = advanceStrategicAccountOpportunities({
+        businessId: owned.id,
+        offers: resolved.updated.business.offers,
+        family: resolved.updated.familyState.family,
+        existingOpportunities: owned.strategicAccountOpportunities,
+        rng: rng.fork(`business:${owned.id}:strategicAccounts`),
+        date: nextDate,
+      });
+      businesses.push({ ...resolved.updated, saleProcess: finalSaleProcess, strategicAccountOpportunities });
     }
   }
 

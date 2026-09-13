@@ -86,7 +86,16 @@ export function createOwnedBusiness(id: string, spec: CreateBusinessSpec): Owned
       break;
   }
 
-  return { id, business, workforce, marketId: spec.marketId, familyState, saleProcess: null };
+  return {
+    id,
+    business,
+    workforce,
+    marketId: spec.marketId,
+    familyState,
+    saleProcess: null,
+    strategicAccounts: [],
+    strategicAccountOpportunities: [],
+  };
 }
 
 /** Taux d'imposition standard appliqué en P0 (simplification : pas de barème progressif). */
