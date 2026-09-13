@@ -571,6 +571,55 @@ describe("migrateSaveGame", () => {
     expect(opportunity.relationship).toBeNull();
   });
 
+  it("un contrat signé antérieur à M11.2.4.5 (sans renewalProposal/renewalDeadlineMonthsRemaining) reçoit null pour les deux, jamais un renouvellement fabriqué (spec M11.2.4.5 §12)", () => {
+    const alreadyMigrated = migrateSaveGame(LEGACY_M10_SAVE);
+    const legacyRenewalSave = {
+      ...alreadyMigrated,
+      gameState: {
+        ...alreadyMigrated.gameState,
+        businesses: [
+          {
+            ...alreadyMigrated.gameState.businesses[0]!,
+            familyState: { family: "service" as const, reputationScore: 0.5, costPerLaborHour: 8 },
+            strategicAccountOpportunities: [
+              {
+                id: "biz-1:offer-1:service-entreprises-exigeantes:24305",
+                businessId: "service-abc123",
+                offerId: "offer-1",
+                segmentId: "service-entreprises-exigeantes",
+                companyName: "Groupe Meridien",
+                contactName: "Camille Marchand",
+                contactRole: "Directrice générale",
+                source: "network",
+                discoveredAt: { year: 2025, month: 6 },
+                status: "won",
+                researchHoursInvested: 20,
+                lastAccountProposal: null,
+                contract: {
+                  price: 12_000,
+                  volume: 40,
+                  qualityCommitment: 70,
+                  durationMonths: 6,
+                  monthsRemaining: 0,
+                  signedAt: { year: 2025, month: 6 },
+                  lastMonthServedVolume: 40,
+                  lastMonthUnservedVolume: 0,
+                  // renewalProposal/renewalDeadlineMonthsRemaining absents : sauvegarde M11.2.4.4.
+                },
+                relationship: null,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const migrated = migrateSaveGame(legacyRenewalSave);
+    const contract = migrated.gameState.businesses[0]!.strategicAccountOpportunities[0]!.contract!;
+    expect(contract.renewalProposal).toBeNull();
+    expect(contract.renewalDeadlineMonthsRemaining).toBeNull();
+    expect(contract.volume).toBe(40);
+  });
+
   it("la migration M11.2.4.2 est idempotente (researchHoursInvested/budgetEstimate stables sur double passage)", () => {
     const alreadyMigrated = migrateSaveGame(LEGACY_M10_SAVE);
     const legacyOpportunitySave = {

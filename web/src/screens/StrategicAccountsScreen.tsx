@@ -140,6 +140,53 @@ function OpportunityCard({
               <span className="text-sm text-secondary">Pas encore d'historique de livraison</span>
             </div>
           )}
+
+          {opportunity.contract.renewalProposal ? (
+            <div className="stack" style={{ marginTop: 8 }}>
+              <div className="text-sm text-secondary">Proposition de renouvellement du compte</div>
+              <div className="row row--between">
+                <span className="text-sm text-secondary">Prix</span>
+                <span className="text-sm" style={{ fontWeight: 700 }}>
+                  {Math.round(opportunity.contract.renewalProposal.price).toLocaleString("fr-FR")} €
+                </span>
+              </div>
+              <div className="row row--between">
+                <span className="text-sm text-secondary">Volume</span>
+                <span className="text-sm" style={{ fontWeight: 700 }}>
+                  {Math.round(opportunity.contract.renewalProposal.volume)} {unit}
+                </span>
+              </div>
+              <div className="row row--between">
+                <span className="text-sm text-secondary">Durée</span>
+                <span className="text-sm" style={{ fontWeight: 700 }}>
+                  {opportunity.contract.renewalProposal.durationMonths} mois
+                </span>
+              </div>
+              {showProposalForm ? (
+                <ProposalForm
+                  unit={unit}
+                  submitLabel="Contre-proposer"
+                  initial={opportunity.contract.renewalProposal}
+                  onSubmit={(proposal) => {
+                    onNegotiate({ kind: "counter", opportunityId: opportunity.id, proposal });
+                    setShowProposalForm(false);
+                  }}
+                />
+              ) : (
+                <div className="row" style={{ gap: 8 }}>
+                  <button className="btn btn--primary" onClick={() => onNegotiate({ kind: "accept", opportunityId: opportunity.id })}>
+                    Accepter
+                  </button>
+                  <button className="btn btn--ghost" onClick={() => setShowProposalForm(true)}>
+                    Contre-proposer
+                  </button>
+                  <button className="btn btn--ghost" onClick={() => onNegotiate({ kind: "withdraw", opportunityId: opportunity.id })}>
+                    Refuser
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
         </>
       ) : (
         <>
@@ -255,6 +302,11 @@ export function StrategicAccountsScreen({ businessId }: { readonly businessId: s
     setStrategicAccountActions(businessId, replaceStrategicAccountAction(draftBusiness.strategicAccountActions, action.opportunityId, action));
   };
 
+  // Un compte "lost" (départ réel, spec M11.2.4.5 §12) n'est plus une
+  // opportunité active — sa trace reste dans les événements/la mémoire
+  // longue, jamais dans cette liste consultative.
+  const activeOpportunities = business.strategicAccountOpportunities.filter((o) => o.status !== "lost" && o.status !== "declined-by-player");
+
   return (
     <div className="stack">
       <button className="top-back" onClick={() => navigate({ screen: "business", businessId })}>
@@ -263,13 +315,13 @@ export function StrategicAccountsScreen({ businessId }: { readonly businessId: s
       <h1 className="screen-title">Comptes stratégiques</h1>
       <p className="screen-subtitle">Opportunités de grands comptes en cours d'étude.</p>
 
-      {business.strategicAccountOpportunities.length === 0 ? (
+      {activeOpportunities.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state__icon">🤝</div>
           <p>Aucune opportunité pour l'instant. Une démarche commerciale ciblée peut en faire émerger une.</p>
         </div>
       ) : (
-        business.strategicAccountOpportunities.map((opportunity) => (
+        activeOpportunities.map((opportunity) => (
           <OpportunityCard
             key={opportunity.id}
             opportunity={opportunity}

@@ -166,6 +166,11 @@ function migrateAccountContract(contract: StrategicAccountOpportunity["contract"
     ...contract,
     lastMonthServedVolume: contract.lastMonthServedVolume ?? 0,
     lastMonthUnservedVolume: contract.lastMonthUnservedVolume ?? 0,
+    // Complète un contrat signé antérieur à M11.2.4.5 (spec §12) — jamais
+    // un renouvellement fabriqué : `null` signifie "aucun renouvellement
+    // en cours", cohérent avec l'état initial produit par le moteur.
+    renewalProposal: contract.renewalProposal ?? null,
+    renewalDeadlineMonthsRemaining: contract.renewalDeadlineMonthsRemaining ?? null,
   };
 }
 

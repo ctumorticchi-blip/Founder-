@@ -373,3 +373,135 @@ describe("Strategic Accounts — Relationship & Concentration (spec M11.2.4.4 §
     expect(screen.getByText(/pas encore d'historique de livraison/i)).toBeInTheDocument();
   });
 });
+
+describe("Strategic Accounts — Renewal & Loss (spec M11.2.4.5 §12-§13)", () => {
+  it("un renouvellement en attente affiche la proposition du client et permet de l'accepter, sans id technique ni statut brut", async () => {
+    const user = userEvent.setup();
+    const firstRender = renderApp();
+
+    await user.click(screen.getByRole("button", { name: /commencer ma vie/i }));
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/agence de conseil/i));
+    await user.click(screen.getByRole("button", { name: /lancer l'entreprise/i }));
+    await endMonth(user);
+
+    const businessId = loadSave()!.draft.businesses[0]!.businessId;
+    const save = loadSave()!;
+    const opportunityWithRenewal = {
+      id: `${businessId}:offer-x:agency-grands-comptes:x`,
+      businessId,
+      offerId: "offer-x",
+      segmentId: "agency-grands-comptes",
+      companyName: "Groupe Meridien",
+      contactName: "Camille Marchand",
+      contactRole: "Directrice générale",
+      source: "network" as const,
+      discoveredAt: save.gameState.date,
+      status: "won" as const,
+      researchHoursInvested: 40,
+      budgetEstimate: {
+        price: { value: 13_000, uncertainty: 0 },
+        volume: { value: 40, uncertainty: 0 },
+        qualityCommitment: { value: 70, uncertainty: 0 },
+      },
+      lastAccountProposal: null,
+      contract: {
+        price: 13_000,
+        volume: 40,
+        qualityCommitment: 70,
+        durationMonths: 6,
+        monthsRemaining: 0,
+        signedAt: save.gameState.date,
+        lastMonthServedVolume: 40,
+        lastMonthUnservedVolume: 0,
+        renewalProposal: { price: 14_500, volume: 40, qualityCommitment: 70, durationMonths: 6 },
+        renewalDeadlineMonthsRemaining: 3,
+      },
+      relationship: null,
+    };
+    writeSave({
+      ...save,
+      gameState: {
+        ...save.gameState,
+        businesses: save.gameState.businesses.map((b) =>
+          b.id === businessId ? { ...b, strategicAccountOpportunities: [opportunityWithRenewal] } : b,
+        ),
+      },
+    });
+
+    firstRender.unmount();
+    renderApp();
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/comptes stratégiques/i));
+
+    expect(await screen.findByText(/proposition de renouvellement/i)).toBeInTheDocument();
+    expect(screen.getByText(/14.500/i)).toBeInTheDocument(); // prix de la proposition, formaté fr-FR
+    expect(document.body.textContent).not.toContain(opportunityWithRenewal.id);
+    expect(document.body.textContent).not.toContain("renewalProposal");
+
+    await user.click(screen.getByRole("button", { name: /^accepter$/i }));
+    await user.click(screen.getByText(/^← entreprise$/i));
+    await endMonth(user);
+
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/comptes stratégiques/i));
+    expect(await screen.findByText(/contrat signé/i)).toBeInTheDocument();
+    expect(screen.getByText(/14.500/i)).toBeInTheDocument(); // nouveau montant du contrat renouvelé
+    expect(screen.queryByText(/proposition de renouvellement/i)).not.toBeInTheDocument();
+  });
+
+  it("un compte 'lost' (départ réel) n'apparaît plus dans la liste", async () => {
+    const user = userEvent.setup();
+    const firstRender = renderApp();
+
+    await user.click(screen.getByRole("button", { name: /commencer ma vie/i }));
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/agence de conseil/i));
+    await user.click(screen.getByRole("button", { name: /lancer l'entreprise/i }));
+    await endMonth(user);
+
+    const businessId = loadSave()!.draft.businesses[0]!.businessId;
+    const save = loadSave()!;
+    const lostOpportunity = {
+      id: `${businessId}:offer-x:agency-grands-comptes:x`,
+      businessId,
+      offerId: "offer-x",
+      segmentId: "agency-grands-comptes",
+      companyName: "Groupe Meridien",
+      contactName: "Camille Marchand",
+      contactRole: "Directrice générale",
+      source: "network" as const,
+      discoveredAt: save.gameState.date,
+      status: "lost" as const,
+      researchHoursInvested: 40,
+      budgetEstimate: {
+        price: { value: 13_000, uncertainty: 0 },
+        volume: { value: 40, uncertainty: 0 },
+        qualityCommitment: { value: 70, uncertainty: 0 },
+      },
+      lastAccountProposal: null,
+      contract: null,
+      relationship: null,
+    };
+    writeSave({
+      ...save,
+      gameState: {
+        ...save.gameState,
+        businesses: save.gameState.businesses.map((b) =>
+          b.id === businessId ? { ...b, strategicAccountOpportunities: [lostOpportunity] } : b,
+        ),
+      },
+    });
+
+    firstRender.unmount();
+    renderApp();
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/comptes stratégiques/i));
+
+    expect(await screen.findByText(/aucune opportunité pour l'instant/i)).toBeInTheDocument();
+    expect(screen.queryByText(/groupe meridien/i)).not.toBeInTheDocument();
+  });
+});
