@@ -178,6 +178,8 @@ export function migrateSaveGame(raw: unknown): SaveGameV1 {
         business: { ...owned.business, properties: owned.business.properties ?? [], offers },
         familyState: migrateFamilyState(owned.familyState),
         saleProcess: owned.saleProcess ?? null,
+        strategicAccounts: owned.strategicAccounts ?? [],
+        strategicAccountOpportunities: owned.strategicAccountOpportunities ?? [],
       };
     }),
   };

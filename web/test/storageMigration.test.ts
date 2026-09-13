@@ -389,4 +389,50 @@ describe("migrateSaveGame", () => {
     const migrated = migrateSaveGame(LEGACY_M10_SAVE);
     expect(migrated.lastRecap).toBeNull();
   });
+
+  it("une entreprise sans strategicAccounts/strategicAccountOpportunities (antérieure à M11.2.4) reçoit [] pour les deux, jamais un compte fabriqué (spec M11.2.4 §14)", () => {
+    const migrated = migrateSaveGame(LEGACY_M10_SAVE);
+    const business = migrated.gameState.businesses[0]!;
+    expect(business.strategicAccounts).toEqual([]);
+    expect(business.strategicAccountOpportunities).toEqual([]);
+  });
+
+  it("la migration M11.2.4 est idempotente (strategicAccounts/strategicAccountOpportunities stables sur double passage)", () => {
+    const migratedOnce = migrateSaveGame(LEGACY_M10_SAVE);
+    const migratedTwice = migrateSaveGame(migratedOnce);
+    expect(migratedTwice).toEqual(migratedOnce);
+  });
+
+  it("une sauvegarde portant déjà des opportunités les préserve telles quelles (pas de perte lors d'une remigration)", () => {
+    const alreadyMigrated = migrateSaveGame(LEGACY_M10_SAVE);
+    const withOpportunity = {
+      ...alreadyMigrated,
+      gameState: {
+        ...alreadyMigrated.gameState,
+        businesses: [
+          {
+            ...alreadyMigrated.gameState.businesses[0]!,
+            strategicAccountOpportunities: [
+              {
+                id: "x",
+                businessId: "service-abc123",
+                offerId: "o1",
+                segmentId: "s1",
+                companyName: "Groupe Meridien",
+                contactName: "Camille Marchand",
+                contactRole: "Directrice générale",
+                source: "network",
+                discoveredAt: { year: 2025, month: 6 },
+                status: "researching",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const remigrated = migrateSaveGame(withOpportunity);
+    expect(remigrated.gameState.businesses[0]!.strategicAccountOpportunities).toEqual(
+      withOpportunity.gameState.businesses[0]!.strategicAccountOpportunities,
+    );
+  });
 });
