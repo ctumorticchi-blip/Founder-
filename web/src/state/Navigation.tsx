@@ -17,6 +17,8 @@ export type Route =
   | { readonly screen: "finances"; readonly businessId?: string }
   /** Liste consultative des opportunités de comptes stratégiques (spec M11.2.4.1 §13). */
   | { readonly screen: "strategicAccounts"; readonly businessId: string }
+  /** Liste consultative des concurrents identifiés du marché de cette entreprise (spec M11.2.5 §6). */
+  | { readonly screen: "competitors"; readonly businessId: string }
   | { readonly screen: "news" };
 
 interface NavigationValue {

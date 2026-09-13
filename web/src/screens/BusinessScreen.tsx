@@ -168,6 +168,20 @@ export function BusinessScreen({ businessId }: { readonly businessId: string }) 
         pendingCreateActions={draftBusiness.offerActions}
       />
 
+      {business ? (
+        <div
+          className="card card--interactive"
+          onClick={() => navigate({ screen: "competitors", businessId: draftBusiness.businessId })}
+        >
+          <div className="row row--between">
+            <div className="section-title" style={{ marginBottom: 0 }}>
+              Concurrents identifiés
+            </div>
+            <span className="text-sm text-secondary">Voir →</span>
+          </div>
+        </div>
+      ) : null}
+
       {business && business.strategicAccountOpportunities.length > 0 ? (
         <div
           className="card card--interactive"

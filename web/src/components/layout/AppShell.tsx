@@ -15,6 +15,7 @@ import { CreateOfferScreen } from "../../screens/CreateOfferScreen";
 import { OfferScreen } from "../../screens/OfferScreen";
 import { FinancesScreen } from "../../screens/FinancesScreen";
 import { StrategicAccountsScreen } from "../../screens/StrategicAccountsScreen";
+import { CompetitorsScreen } from "../../screens/CompetitorsScreen";
 import { NewsScreen } from "../../screens/NewsScreen";
 import { MonthRecapModal } from "../../screens/MonthRecapModal";
 
@@ -83,6 +84,8 @@ function Screen({ route }: { readonly route: Route }) {
       return <FinancesScreen businessId={route.businessId} />;
     case "strategicAccounts":
       return <StrategicAccountsScreen businessId={route.businessId} />;
+    case "competitors":
+      return <CompetitorsScreen businessId={route.businessId} />;
     case "news":
       return <NewsScreen />;
     default:
