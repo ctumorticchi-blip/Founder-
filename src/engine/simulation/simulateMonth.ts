@@ -8,7 +8,7 @@ import { TIME_CATEGORIES, type SkillName, type TimeCategory } from "../../types/
 import { INSOLVENCY_THRESHOLD_MONTHS } from "../business/treasury.js";
 import { advanceSaleProcess, closeSale, resolveSaleDecision, startSaleProcess } from "../business/sale.js";
 import { computeValuation } from "../business/valuation.js";
-import { advanceStrategicAccountOpportunities } from "../business/strategicAccounts.js";
+import { advanceStrategicAccountOpportunities, applyStrategicAccountActions } from "../business/strategicAccounts.js";
 import { appendToMemory } from "../narrative/narrative.js";
 import { createOwnedBusiness, resolveBusinessMonth } from "./businessResolution.js";
 import type { GameEvent } from "../../types/narrative.js";
@@ -76,15 +76,21 @@ function validateActions(state: GameState, actions: MonthActions): void {
   }
 
   // Budget de temps fondateur partagé (spec M11.1.5 §5.3, §7.2, étendu
-  // M11.2 §3.3) : production, prospection ET développement d'offre de
-  // TOUTES les entreprises comptent contre le même budget global — jamais
-  // un levier gratuit, jamais un dédoublement de temps.
+  // M11.2 §3.3, M11.2.4.2 §6) : production, prospection, développement
+  // d'offre ET temps de recherche investi sur une opportunité de compte
+  // stratégique de TOUTES les entreprises comptent contre le même budget
+  // global — jamais un levier gratuit, jamais un dédoublement de temps.
   const totalFounderHours = actions.businessActions.reduce((sum, action) => {
     const developmentHours = (action.offerActions ?? []).reduce(
       (offerSum, offerAction) => offerSum + (offerAction.kind === "develop" ? offerAction.hours : 0),
       0,
     );
-    return sum + action.founderHoursAllocated + action.founderProspectionHoursAllocated + developmentHours;
+    const strategicAccountResearchHours = (action.strategicAccountActions ?? []).reduce(
+      (researchSum, strategicAccountAction) =>
+        researchSum + (strategicAccountAction.kind === "invest-time" ? strategicAccountAction.hours : 0),
+      0,
+    );
+    return sum + action.founderHoursAllocated + action.founderProspectionHoursAllocated + developmentHours + strategicAccountResearchHours;
   }, 0);
   if (totalFounderHours > actions.timeAllocation.business) {
     throw new RangeError(
@@ -257,11 +263,21 @@ export function simulateMonth(state: GameState, actions: MonthActions, seed: num
         });
       }
       const finalSaleProcess = saleProcess?.status === "withdrawn" ? null : saleProcess;
+      // Actions du joueur (investissement de temps, négociation) sur les
+      // opportunités EXISTANTES, appliquées AVANT l'apparition de
+      // nouvelles opportunités ce mois-ci (même ordre que applyOfferActions
+      // avant le calcul économique, businessResolution.ts).
+      const opportunitiesAfterActions = applyStrategicAccountActions(
+        owned.strategicAccountOpportunities,
+        action.strategicAccountActions ?? [],
+        resolved.updated.familyState.family,
+        nextDate,
+      );
       const strategicAccountOpportunities = advanceStrategicAccountOpportunities({
         businessId: owned.id,
         offers: resolved.updated.business.offers,
         family: resolved.updated.familyState.family,
-        existingOpportunities: owned.strategicAccountOpportunities,
+        existingOpportunities: opportunitiesAfterActions,
         rng: rng.fork(`business:${owned.id}:strategicAccounts`),
         date: nextDate,
       });

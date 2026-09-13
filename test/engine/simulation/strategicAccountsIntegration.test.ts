@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createInitialGameState } from "../../../src/engine/simulation/game.js";
 import { simulateMonth } from "../../../src/engine/simulation/simulateMonth.js";
+import { deriveTrueOpportunityBudget } from "../../../src/engine/business/strategicAccounts.js";
 import type { BusinessAction, GameState, MonthActions } from "../../../src/engine/simulation/types.js";
+import type { AccountProposal, StrategicAccountAction } from "../../../src/types/strategicAccount.js";
 import { AGENCY_MARKET } from "../../../src/scenarios/markets.js";
+
+const AGENCY_GRANDS_COMPTES_REFERENCE_PRICE = 12_000;
 
 const BIRTH_DATE = { year: 2008, month: 1 };
 const START_DATE = { year: 2026, month: 1 };
@@ -48,7 +52,11 @@ function agencyCreateAction(): BusinessAction {
   };
 }
 
-function monthActions(businessId: string, existing: boolean): MonthActions {
+function monthActions(
+  businessId: string,
+  existing: boolean,
+  strategicAccountActions: readonly StrategicAccountAction[] = [],
+): MonthActions {
   return {
     timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
     jobHourlyWage: null,
@@ -60,6 +68,7 @@ function monthActions(businessId: string, existing: boolean): MonthActions {
             founderProspectionHoursAllocated: 0,
             decisions: { family: "agency" },
             offerActions: [],
+            strategicAccountActions,
             marketingBudget: 0,
             rentBudget: 0,
             adminBudget: 0,
@@ -69,6 +78,20 @@ function monthActions(businessId: string, existing: boolean): MonthActions {
         : agencyCreateAction(),
     ],
   };
+}
+
+/** Avance jusqu'à ce qu'au moins une opportunité existe, renvoie l'état ET son id (horizon généreux, seed fixe pour rester déterministe). */
+function advanceUntilFirstOpportunity(seed: number): { state: GameState; opportunityId: string } {
+  let state: GameState = createInitialGameState(seed, BIRTH_DATE, START_DATE, [AGENCY_MARKET]);
+  state = simulateMonth(state, monthActions("conseil-1", false), seed);
+  for (let month = 0; month < 60; month++) {
+    const opportunities = state.businesses[0]!.strategicAccountOpportunities;
+    if (opportunities.length > 0) {
+      return { state, opportunityId: opportunities[0]!.id };
+    }
+    state = simulateMonth(state, monthActions("conseil-1", true), seed);
+  }
+  throw new Error("advanceUntilFirstOpportunity: aucune opportunité apparue dans l'horizon de test — seed à recalibrer.");
 }
 
 describe("Strategic Account Opportunities — intégration mensuelle (spec M11.2.4.1 §15)", () => {
@@ -103,5 +126,98 @@ describe("Strategic Account Opportunities — intégration mensuelle (spec M11.2
       return state.businesses[0]!.strategicAccountOpportunities;
     }
     expect(run(5)).toEqual(run(5));
+  });
+});
+
+describe("Prospecting & Negotiation — intégration mensuelle (spec M11.2.4.2 §6, §8)", () => {
+  it("invest-time accumule researchHoursInvested sur plusieurs mois, validé contre le budget de temps partagé", () => {
+    const { state: initial, opportunityId } = advanceUntilFirstOpportunity(2);
+    // founderHoursAllocated réduit à 140h (au lieu de 150) pour laisser 10h de marge
+    // dans le budget "business" (150h) — invest-time n'est jamais un levier de temps
+    // gratuit, il doit se loger dans le MÊME budget partagé (spec §6).
+    const monthWithInvestment = (): MonthActions => ({
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
+      jobHourlyWage: null,
+      businessActions: [
+        {
+          businessId: "conseil-1",
+          founderHoursAllocated: 140,
+          founderProspectionHoursAllocated: 0,
+          decisions: { family: "agency" },
+          offerActions: [],
+          strategicAccountActions: [{ kind: "invest-time", opportunityId, hours: 10 }],
+          marketingBudget: 0,
+          rentBudget: 0,
+          adminBudget: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
+        },
+      ],
+    });
+    let state = simulateMonth(initial, monthWithInvestment(), 2);
+    state = simulateMonth(state, monthWithInvestment(), 2);
+    const opportunity = state.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!;
+    expect(opportunity.researchHoursInvested).toBe(20);
+  });
+
+  it("dépasser le budget de temps fondateur partagé avec invest-time est rejeté (même contrainte que founderHoursAllocated/develop)", () => {
+    const { state: initial, opportunityId } = advanceUntilFirstOpportunity(2);
+    const overBudgetActions: MonthActions = {
+      timeAllocation: { emploi: 0, apprentissage: 0, business: 150, reseau: 0 },
+      jobHourlyWage: null,
+      businessActions: [
+        {
+          businessId: "conseil-1",
+          founderHoursAllocated: 150,
+          founderProspectionHoursAllocated: 0,
+          decisions: { family: "agency" },
+          offerActions: [],
+          strategicAccountActions: [{ kind: "invest-time", opportunityId, hours: 50 }],
+          marketingBudget: 0,
+          rentBudget: 0,
+          adminBudget: 0,
+          headcountCapacity: Number.POSITIVE_INFINITY,
+          storageCapacity: Number.POSITIVE_INFINITY,
+        },
+      ],
+    };
+    expect(() => simulateMonth(initial, overBudgetActions, 2)).toThrow();
+  });
+
+  it("négociation complète de bout en bout via simulateMonth -> contrat signé", () => {
+    const { state: initial, opportunityId } = advanceUntilFirstOpportunity(2);
+    const budget = deriveTrueOpportunityBudget(opportunityId, AGENCY_GRANDS_COMPTES_REFERENCE_PRICE);
+
+    const tooHigh: AccountProposal = { price: budget.maxAcceptablePrice * 2, volume: 10, qualityCommitment: 60, durationMonths: 6 };
+    let state = simulateMonth(
+      initial,
+      monthActions("conseil-1", true, [{ kind: "propose", opportunityId, proposal: tooHigh }]),
+      2,
+    );
+    let opportunity = state.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!;
+    expect(opportunity.status).toBe("negotiating");
+    expect(opportunity.lastAccountProposal).not.toBeNull();
+
+    state = simulateMonth(state, monthActions("conseil-1", true, [{ kind: "accept", opportunityId }]), 2);
+    opportunity = state.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!;
+    expect(opportunity.status).toBe("won");
+    expect(opportunity.contract).not.toBeNull();
+    expect(state.businesses[0]!.strategicAccounts).toEqual([]); // toujours aucune conversion en compte confirmé
+  });
+
+  it("signer un contrat n'a AUCUN effet sur lastStatement.revenue du même mois (spec §15 : contrat papier tant que M11.2.4.3 n'existe pas)", () => {
+    const { state: initial, opportunityId } = advanceUntilFirstOpportunity(2);
+    const budget = deriveTrueOpportunityBudget(opportunityId, AGENCY_GRANDS_COMPTES_REFERENCE_PRICE);
+    const tooHigh: AccountProposal = { price: budget.maxAcceptablePrice * 2, volume: 10, qualityCommitment: 60, durationMonths: 6 };
+    const negotiating = simulateMonth(initial, monthActions("conseil-1", true, [{ kind: "propose", opportunityId, proposal: tooHigh }]), 2);
+
+    // Deux branches DEPUIS LE MÊME ÉTAT PRÉALABLE (negotiating), pour le même mois :
+    // l'une accepte le contrat, l'autre ne fait rien. Toute différence de revenu entre
+    // les deux prouverait un effet économique du contrat — interdit avant M11.2.4.3.
+    const withAccept = simulateMonth(negotiating, monthActions("conseil-1", true, [{ kind: "accept", opportunityId }]), 2);
+    const withoutAccept = simulateMonth(negotiating, monthActions("conseil-1", true, []), 2);
+
+    expect(withAccept.businesses[0]!.strategicAccountOpportunities.find((o) => o.id === opportunityId)!.status).toBe("won");
+    expect(withAccept.businesses[0]!.lastStatement!.revenue).toBe(withoutAccept.businesses[0]!.lastStatement!.revenue);
   });
 });

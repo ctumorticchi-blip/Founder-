@@ -9,7 +9,7 @@ import type { GameEvent, MemoryEntry } from "../../types/narrative.js";
 import type { PropertyPurchaseSpec } from "../../types/realEstate.js";
 import type { SaleDecision, SaleProcessState } from "../../types/sale.js";
 import type { OfferAction } from "../../types/offer.js";
-import type { StrategicAccount, StrategicAccountOpportunity } from "../../types/strategicAccount.js";
+import type { StrategicAccount, StrategicAccountAction, StrategicAccountOpportunity } from "../../types/strategicAccount.js";
 
 /** État persistant propre à chaque famille, en plus de `BusinessState`/`WorkforceState` communs. */
 export type BusinessFamilyState =
@@ -180,6 +180,15 @@ export interface BusinessAction {
    * `validateActions`).
    */
   readonly offerActions?: readonly OfferAction[];
+  /**
+   * Actions du joueur sur les opportunités de comptes stratégiques de
+   * cette entreprise ce mois-ci (spec M11.2.4.2 §6, §8). Les heures des
+   * actions `"invest-time"` comptent contre le même budget de temps
+   * fondateur global que `founderHoursAllocated`/
+   * `founderProspectionHoursAllocated`/`offerActions.develop` (voir
+   * `validateActions`) — jamais un budget de temps parallèle et gratuit.
+   */
+  readonly strategicAccountActions?: readonly StrategicAccountAction[];
   /**
    * Texte libre relayé verbatim comme `GameEvent` de type `business-note`
    * (spec M11.1.5 §3.3) : passe-plat narratif générique, le moteur ne
