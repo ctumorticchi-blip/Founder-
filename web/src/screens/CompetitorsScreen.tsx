@@ -1,8 +1,19 @@
-import { computeCompetitorMarketShare, createRng, deriveSeed, projectCompetitorView, projectMarketView } from "@founder/engine";
+import {
+  computeCompetitorMarketShare,
+  computeSegmentAvailability,
+  createRng,
+  deriveSeed,
+  getMarketSegments,
+  projectCompetitorView,
+  projectMarketView,
+  projectSegmentAvailabilityView,
+  type EconomicFamily,
+} from "@founder/engine";
 import { useGame } from "../state/GameProvider";
 import { useNavigation } from "../state/Navigation";
 import { competitiveIntensityLabel, competitivePositionLabel, marketShareLevelLabel } from "../data/competitorLabels";
 import { formatEstimateRange } from "../data/strategicAccountLabels";
+import { demandUnitLabel } from "../data/offerModels";
 
 export function CompetitorsScreen({ businessId }: { readonly businessId: string }) {
   const { state } = useGame();
@@ -21,6 +32,7 @@ export function CompetitorsScreen({ businessId }: { readonly businessId: string 
   const market = gameState.markets[business.marketId];
   const aggregate = gameState.competitions[business.marketId];
   const marketCompetitors = gameState.competitors[business.marketId] ?? [];
+  const family = business.familyState.family as EconomicFamily;
   const skills = { finance: gameState.character.skills.finance, strategie: gameState.character.skills.strategie };
   const skillAverage = (skills.finance + skills.strategie) / 2;
 
@@ -31,6 +43,14 @@ export function CompetitorsScreen({ businessId }: { readonly businessId: string 
   const seed = state.seed;
   const displayRng = createRng(deriveSeed(seed, "market-study-view", gameState.date.year, gameState.date.month));
   const marketView = market ? projectMarketView(market, skills, displayRng.fork("market")) : null;
+  const segmentViews = market
+    ? projectSegmentAvailabilityView(
+        computeSegmentAvailability(market, getMarketSegments(family), gameState.date),
+        skillAverage,
+        displayRng.fork("segments"),
+      )
+    : [];
+  const unit = demandUnitLabel(family);
   const views =
     aggregate && marketCompetitors.length > 0
       ? marketCompetitors.map((competitor) => {
@@ -71,6 +91,20 @@ export function CompetitorsScreen({ businessId }: { readonly businessId: string 
               {competitiveIntensityLabel(marketView.competitiveIntensity.value)}
             </span>
           </div>
+        </div>
+      ) : null}
+
+      {segmentViews.length > 0 ? (
+        <div className="card stack">
+          <div className="section-title">Segments de clientèle</div>
+          {segmentViews.map((segment) => (
+            <div className="row row--between" key={segment.segmentId}>
+              <span className="text-sm text-secondary">{segment.segmentLabel}</span>
+              <span className="text-sm" style={{ fontWeight: 700 }}>
+                {formatEstimateRange(segment.availableMarket, unit)}
+              </span>
+            </div>
+          ))}
         </div>
       ) : null}
 

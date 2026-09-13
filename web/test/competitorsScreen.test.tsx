@@ -42,6 +42,35 @@ describe("Étude de marché (spec M11.2.5 §6, M11.2.6.1)", () => {
     expect(bodyText).not.toContain(String(Math.round(market.sizeMonthlyRevenuePotential)));
   });
 
+  it("affiche une estimation bruitée de la taille de chaque segment de clientèle, sans nombre brut ni id technique", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: /commencer ma vie/i }));
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/agence de conseil/i));
+    await user.click(screen.getByRole("button", { name: /lancer l'entreprise/i }));
+    await endMonth(user); // mois 1 : l'entreprise existe réellement
+
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/concurrents identifiés/i));
+
+    expect(await screen.findByText(/segments de clientèle/i)).toBeInTheDocument();
+
+    const businessId = loadSave()!.draft.businesses[0]!.businessId;
+    const save = loadSave()!;
+    const business = save.gameState.businesses.find((b) => b.id === businessId)!;
+    expect(business.familyState.family).toBe("agency");
+
+    const bodyText = document.body.textContent ?? "";
+    // Segments réels du catalogue agency (engine/market/segments.ts) — tous doivent apparaître nommés.
+    expect(bodyText).toContain("TPE / indépendants");
+    expect(bodyText).toContain("PME en croissance");
+    expect(bodyText).toContain("Entreprises établies");
+    expect(bodyText).toContain("Grands comptes ponctuels");
+  });
+
   it("affiche les concurrents identifiés du marché avec des libellés qualitatifs, sans id technique ni score brut", async () => {
     const user = userEvent.setup();
     renderApp();
