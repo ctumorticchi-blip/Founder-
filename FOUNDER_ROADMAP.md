@@ -30,14 +30,18 @@ mobile-first.
   réellement en mobile : temps investi → proposition rejetée →
   contre-proposition → acceptation → contrat signé). Voir
   `FOUNDER_STATE.md` pour le détail.
+- M11.2.4.3 — Contract Execution : implémenté et vérifié (6 tâches TDD,
+  suite complète verte, `computeTotalDemand`/`resolveOfferOutcome`
+  réutilisées sans aucune modification de forme, allocation à 3 flux
+  new/repeat/contractuel sans priorité cachée sur les 5 familles,
+  playtest mobile réel confirmant l'effet économique immédiat d'un
+  contrat signé). Voir `FOUNDER_STATE.md` pour le détail.
 
 ## Actif — Strategic Accounts (M11.2.4)
 
 1. ~~**M11.2.4.1 — Strategic Account Core**~~ — terminé.
 2. ~~**M11.2.4.2 — Prospecting & Negotiation**~~ — terminé.
-3. **M11.2.4.3 — Contract Execution** — intégration réelle dans
-   `computeTotalDemand`/l'allocation de capacité à 3 flux sans priorité
-   cachée (patron déjà spécifié, spec §2-§3) — CA/coûts réels.
+3. ~~**M11.2.4.3 — Contract Execution**~~ — terminé.
 4. **M11.2.4.4 — Relationship & Concentration** — satisfaction/confiance
    de compte, concentration/dépendance, écran complet.
 5. **M11.2.4.5 — Renewal & Loss** — pouvoir de négociation, renouvellement
