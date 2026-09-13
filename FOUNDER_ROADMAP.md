@@ -36,14 +36,19 @@ mobile-first.
   new/repeat/contractuel sans priorité cachée sur les 5 familles,
   playtest mobile réel confirmant l'effet économique immédiat d'un
   contrat signé). Voir `FOUNDER_STATE.md` pour le détail.
+- M11.2.4.4 — Relationship & Concentration : implémenté et vérifié (6
+  tâches TDD, suite complète verte, `customer/*` réutilisées sans
+  aucune modification, satisfaction immédiate/confiance lente
+  différenciées, concentration réelle affichée, playtest mobile réel
+  confirmant la dégradation de confiance sur sous-livraison répétée).
+  Voir `FOUNDER_STATE.md` pour le détail.
 
 ## Actif — Strategic Accounts (M11.2.4)
 
 1. ~~**M11.2.4.1 — Strategic Account Core**~~ — terminé.
 2. ~~**M11.2.4.2 — Prospecting & Negotiation**~~ — terminé.
 3. ~~**M11.2.4.3 — Contract Execution**~~ — terminé.
-4. **M11.2.4.4 — Relationship & Concentration** — satisfaction/confiance
-   de compte, concentration/dépendance, écran complet.
+4. ~~**M11.2.4.4 — Relationship & Concentration**~~ — terminé.
 5. **M11.2.4.5 — Renewal & Loss** — pouvoir de négociation, renouvellement
    dynamique, départ réel d'un compte, narration causale.
 
