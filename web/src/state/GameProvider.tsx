@@ -8,6 +8,7 @@ import {
   type GameState,
   type OfferAction,
   type SaleDecision,
+  type StrategicAccountAction,
   type TimeCategory,
 } from "@founder/engine";
 import { OPPORTUNITIES } from "../data/opportunities";
@@ -131,6 +132,7 @@ type Action =
   | { type: "SET_PROPERTY_PURCHASE"; businessId: string; value: PropertyPurchaseDraft | null }
   | { type: "SET_SALE_DECISION"; businessId: string; value: SaleDecision | null }
   | { type: "SET_OFFER_ACTIONS"; businessId: string; value: readonly OfferAction[] }
+  | { type: "SET_STRATEGIC_ACCOUNT_ACTIONS"; businessId: string; value: readonly StrategicAccountAction[] }
   | { type: "END_MONTH" }
   | { type: "DISMISS_RECAP" }
   | { type: "CLEAR_ERROR" };
@@ -218,6 +220,8 @@ function reducer(state: AppState, action: Action): AppState {
       return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, saleDecision: action.value }));
     case "SET_OFFER_ACTIONS":
       return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, offerActions: action.value }));
+    case "SET_STRATEGIC_ACCOUNT_ACTIONS":
+      return updateBusinessDraft(state, action.businessId, (b) => ({ ...b, strategicAccountActions: action.value }));
     case "END_MONTH": {
       if (!state.gameState || state.seed === null || !state.birthDate) return state;
       try {
@@ -274,6 +278,7 @@ interface GameContextValue {
   readonly setPropertyPurchase: (businessId: string, value: PropertyPurchaseDraft | null) => void;
   readonly setSaleDecision: (businessId: string, value: SaleDecision | null) => void;
   readonly setOfferActions: (businessId: string, value: readonly OfferAction[]) => void;
+  readonly setStrategicAccountActions: (businessId: string, value: readonly StrategicAccountAction[]) => void;
   readonly endMonth: () => void;
   readonly dismissRecap: () => void;
   readonly clearError: () => void;
@@ -319,6 +324,7 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
       setPropertyPurchase: (businessId, value) => dispatch({ type: "SET_PROPERTY_PURCHASE", businessId, value }),
       setSaleDecision: (businessId, value) => dispatch({ type: "SET_SALE_DECISION", businessId, value }),
       setOfferActions: (businessId, value) => dispatch({ type: "SET_OFFER_ACTIONS", businessId, value }),
+      setStrategicAccountActions: (businessId, value) => dispatch({ type: "SET_STRATEGIC_ACCOUNT_ACTIONS", businessId, value }),
       endMonth: () => dispatch({ type: "END_MONTH" }),
       dismissRecap: () => dispatch({ type: "DISMISS_RECAP" }),
       clearError: () => dispatch({ type: "CLEAR_ERROR" }),

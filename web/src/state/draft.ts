@@ -1,4 +1,4 @@
-import type { BusinessAction, GameState, MonthActions, OfferAction, OwnedProperty } from "@founder/engine";
+import type { BusinessAction, GameState, MonthActions, OfferAction, OwnedProperty, StrategicAccountAction } from "@founder/engine";
 import { MONTHLY_TIME_BUDGET_HOURS } from "@founder/engine";
 import {
   computeAdminMonthlyCost,
@@ -38,7 +38,12 @@ export function remainingHours(draft: MonthDraft): number {
  */
 export function totalFounderBusinessHours(draft: MonthDraft): number {
   return draft.businesses.reduce(
-    (sum, b) => sum + b.founderHoursAllocated + b.prospectionHours + offerDevelopmentHours(b.offerActions),
+    (sum, b) =>
+      sum +
+      b.founderHoursAllocated +
+      b.prospectionHours +
+      offerDevelopmentHours(b.offerActions) +
+      strategicAccountResearchHours(b.strategicAccountActions),
     0,
   );
 }
@@ -50,6 +55,11 @@ function ownedPropertiesFor(gameState: GameState | null, businessId: string): re
 /** Somme des heures de développement d'offre demandées ce mois-ci pour une entreprise. */
 export function offerDevelopmentHours(offerActions: readonly OfferAction[]): number {
   return offerActions.reduce((sum, action) => sum + (action.kind === "develop" ? action.hours : 0), 0);
+}
+
+/** Somme des heures de recherche investies ce mois-ci sur des opportunités de comptes stratégiques (spec M11.2.4.2 §6). */
+export function strategicAccountResearchHours(strategicAccountActions: readonly StrategicAccountAction[]): number {
+  return strategicAccountActions.reduce((sum, action) => sum + (action.kind === "invest-time" ? action.hours : 0), 0);
 }
 
 /**
@@ -79,6 +89,7 @@ function buildBusinessAction(b: BusinessDraft, gameState: GameState | null): Bus
     ...(b.isNew && b.createSpec ? { create: b.createSpec } : {}),
     ...(capex > 0 ? { capex } : {}),
     ...(b.offerActions.length > 0 ? { offerActions: b.offerActions } : {}),
+    ...(b.strategicAccountActions.length > 0 ? { strategicAccountActions: b.strategicAccountActions } : {}),
     ...(b.targetHeadcount !== null ? { targetHeadcount: b.targetHeadcount } : {}),
     ...(b.capitalInjection > 0 ? { capitalInjection: b.capitalInjection } : {}),
     ...(listing && b.propertyPurchase
@@ -124,6 +135,7 @@ export function deriveNextDraft(previousDraft: MonthDraft, nextState: GameState)
       propertyPurchase: null,
       saleDecision: null,
       offerActions: [],
+      strategicAccountActions: [],
       committedInfrastructureId: b.infrastructureId,
     }));
 

@@ -260,6 +260,8 @@ function migrateBusinessDraft(
     propertyPurchase: (base as { readonly propertyPurchase?: BusinessDraft["propertyPurchase"] }).propertyPurchase ?? null,
     saleDecision: (base as { readonly saleDecision?: BusinessDraft["saleDecision"] }).saleDecision ?? null,
     offerActions: (base as { readonly offerActions?: BusinessDraft["offerActions"] }).offerActions ?? [],
+    strategicAccountActions:
+      (base as { readonly strategicAccountActions?: BusinessDraft["strategicAccountActions"] }).strategicAccountActions ?? [],
   };
 }
 

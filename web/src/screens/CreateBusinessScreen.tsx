@@ -68,6 +68,7 @@ export function CreateBusinessScreen({ family }: { readonly family: string }) {
       propertyPurchase: null,
       saleDecision: null,
       offerActions: [],
+      strategicAccountActions: [],
     };
     startBusiness(draft);
     navigate({ screen: "business", businessId: draft.businessId });

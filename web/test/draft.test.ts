@@ -39,6 +39,7 @@ function makeBusinessDraft(overrides: Partial<BusinessDraft> = {}): BusinessDraf
     propertyPurchase: null,
     saleDecision: null,
     offerActions: [],
+    strategicAccountActions: [],
     ...overrides,
   };
 }

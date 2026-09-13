@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderApp } from "./testUtils";
+import { loadSave, writeSave } from "../src/lib/storage";
 
 const STORAGE_KEY = "founder.save.v1";
+
+function clickBottomNavEntreprise(user: ReturnType<typeof userEvent.setup>) {
+  const nav = document.querySelector<HTMLElement>(".bottom-nav")!;
+  return user.click(within(nav).getByRole("button", { name: /entreprise/i }));
+}
 
 function seedAgencySaveWithOpportunity() {
   const save = {
@@ -107,5 +113,103 @@ describe("Strategic Accounts — écran consultatif (spec M11.2.4.1 §13)", () =
     expect(screen.getByText(/réseau/i)).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("agy-1:offer-1:agency-grands-comptes:24305");
     expect(document.body.textContent).not.toContain("researching");
+  });
+});
+
+async function endMonth(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: /terminer le mois/i }));
+  await user.click(await screen.findByRole("button", { name: /continuer/i }));
+}
+
+describe("Strategic Accounts — négociation (spec M11.2.4.2 §8)", () => {
+  it("accepter la dernière contre-proposition affiche le contrat signé après la fin du mois, sans id technique ni statut brut", async () => {
+    // Joue une vraie partie (onboarding réel) jusqu'à avoir une offre "agency"
+    // lancée sur le segment éligible, PUIS injecte directement une
+    // opportunité "negotiating" via loadSave/writeSave — bien plus robuste
+    // qu'un GameState entièrement reconstitué à la main (character/timeBudget/
+    // markets/competitions ont une forme réelle exacte difficile à répliquer
+    // fidèlement, découvert en écrivant ce test : deux fixtures à la main ont
+    // échoué successivement sur des champs manquants sans rapport avec la
+    // négociation elle-même).
+    const user = userEvent.setup();
+    const firstRender = renderApp();
+
+    await user.click(screen.getByRole("button", { name: /commencer ma vie/i }));
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/agence de conseil/i));
+    await user.click(screen.getByRole("button", { name: /lancer l'entreprise/i }));
+    await endMonth(user); // mois 1 : l'entreprise existe réellement
+
+    const businessId = loadSave()!.draft.businesses[0]!.businessId;
+
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByRole("button", { name: /nouvelle offre/i }));
+    await user.type(screen.getByLabelText(/nom de l'offre/i), "Accompagnement grands comptes");
+    await user.click(screen.getByRole("button", { name: /grands comptes ponctuels/i }));
+    await user.click(screen.getByRole("button", { name: /accompagnement continu/i }));
+    await user.click(screen.getByRole("button", { name: /créer l'offre/i }));
+    await endMonth(user); // mois 2 : l'offre existe (service-hours, seuil 0%)
+
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/accompagnement grands comptes/i));
+    await user.click(screen.getByRole("button", { name: /lancer l'offre/i }));
+    await endMonth(user); // mois 3 : l'offre est lancée
+
+    const save = loadSave()!;
+    const business = save.gameState.businesses.find((b) => b.id === businessId)!;
+    const offerId = business.business.offers[0]!.id;
+    const negotiatingOpportunity = {
+      id: `${businessId}:${offerId}:agency-grands-comptes:x`,
+      businessId,
+      offerId,
+      segmentId: "agency-grands-comptes",
+      companyName: "Groupe Meridien",
+      contactName: "Camille Marchand",
+      contactRole: "Directrice générale",
+      source: "network" as const,
+      discoveredAt: save.gameState.date,
+      status: "negotiating" as const,
+      researchHoursInvested: 10,
+      budgetEstimate: {
+        price: { value: 13_000, uncertainty: 2_000 },
+        volume: { value: 40, uncertainty: 10 },
+        qualityCommitment: { value: 70, uncertainty: 5 },
+      },
+      lastAccountProposal: { price: 13_500, volume: 42, qualityCommitment: 68, durationMonths: 6 },
+      contract: null,
+    };
+    writeSave({
+      ...save,
+      gameState: {
+        ...save.gameState,
+        businesses: save.gameState.businesses.map((b) =>
+          b.id === businessId ? { ...b, strategicAccountOpportunities: [negotiatingOpportunity] } : b,
+        ),
+      },
+    });
+
+    // Remonte l'app pour qu'elle recharge cet état depuis le stockage (comme un refresh de page).
+    firstRender.unmount();
+    renderApp();
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/comptes stratégiques/i));
+    expect(await screen.findByRole("heading", { name: /comptes stratégiques/i })).toBeInTheDocument();
+
+    expect(screen.getByText(/en négociation/i)).toBeInTheDocument();
+    expect(screen.getByText(/13.500/i)).toBeInTheDocument(); // prix de la contre-proposition, formaté fr-FR
+    await user.click(screen.getByRole("button", { name: /^accepter$/i }));
+
+    await user.click(screen.getByText(/^← entreprise$/i));
+    await endMonth(user);
+
+    await clickBottomNavEntreprise(user);
+    await user.click(await screen.findByText(/conseil/i));
+    await user.click(screen.getByText(/comptes stratégiques/i));
+    expect(await screen.findByText(/contrat signé/i)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("negotiating");
+    expect(document.body.textContent).not.toContain(negotiatingOpportunity.id);
   });
 });

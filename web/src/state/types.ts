@@ -1,4 +1,13 @@
-import type { BusinessFamilyDecisions, CreateBusinessSpec, GameDate, GameState, OfferAction, SaleDecision, TimeCategory } from "@founder/engine";
+import type {
+  BusinessFamilyDecisions,
+  CreateBusinessSpec,
+  GameDate,
+  GameState,
+  OfferAction,
+  SaleDecision,
+  StrategicAccountAction,
+  TimeCategory,
+} from "@founder/engine";
 import type { BusinessNarrative } from "./businessNarrative";
 
 /**
@@ -72,6 +81,12 @@ export interface BusinessDraft {
    * quels par le joueur). Remis à `[]` chaque mois par `deriveNextDraft`.
    */
   readonly offerActions: readonly OfferAction[];
+  /**
+   * Actions sur les opportunités de comptes stratégiques de cette
+   * entreprise ce mois-ci (spec M11.2.4.2 §6, §8) : type moteur réutilisé
+   * directement. Remis à `[]` chaque mois par `deriveNextDraft`.
+   */
+  readonly strategicAccountActions: readonly StrategicAccountAction[];
 }
 
 /** Identité commerciale d'une entreprise (spec M11.1 §3.2), séparée du fait moteur `BusinessState.name`. */
