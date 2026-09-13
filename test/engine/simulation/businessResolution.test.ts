@@ -787,6 +787,57 @@ describe("Contract Execution — intégration réelle (spec M11.2.4.3)", () => {
     expect(b.statement.variableCosts).toBe(a.statement.variableCosts);
     expect(b.updated.strategicAccountOpportunities).toEqual([]);
   });
+
+  it("relationship — un contrat intégralement servi produit une satisfaction mesurée ce mois-ci (spec M11.2.4.4 §9)", () => {
+    const baseline = organicBaseline();
+    const baselineSegment = baseline.updated.business.offers[0]!.lastDemand!.bySegment.find((s) => s.segmentId === CONTRACT_SEGMENT_ID)!;
+    const contractVolume = baselineSegment.demand * 0.5;
+    const owned = createOwnedBusiness("svc", SERVICE_SPEC);
+    const ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonOpportunity(contractVolume, OFFER_PRICE)] };
+
+    const result = resolveBusinessMonth(ownedWithContract, contractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(CONTRACT_RNG_SEED), DATE, SERVICE_MARKET);
+    const relationship = result.updated.strategicAccountOpportunities[0]!.relationship;
+
+    expect(relationship).not.toBeNull();
+    expect(relationship!.satisfaction.scoreThisMonth).not.toBeNull();
+    expect(relationship!.satisfaction.smoothedScore).toBe(relationship!.satisfaction.scoreThisMonth);
+    expect(relationship!.history).toHaveLength(1);
+  });
+
+  it("relationship — une surcharge sévère produit une satisfaction strictement inférieure au cas servi à 100%, toutes choses égales par ailleurs (spec M11.2.4.4 §9)", () => {
+    const baseline = organicBaseline();
+    const baselineSegment = baseline.updated.business.offers[0]!.lastDemand!.bySegment.find((s) => s.segmentId === CONTRACT_SEGMENT_ID)!;
+    const totalDemandBaseline = baseline.updated.business.offers[0]!.lastDemand!.demand;
+    const contractVolume = baselineSegment.demand * 0.5;
+
+    const owned = createOwnedBusiness("svc", SERVICE_SPEC);
+
+    // Cas 1 : capacité abondante -> contrat intégralement servi.
+    const fullyServedOwned: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonOpportunity(contractVolume, OFFER_PRICE)] };
+    const fullyServedResult = resolveBusinessMonth(fullyServedOwned, contractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(CONTRACT_RNG_SEED), DATE, SERVICE_MARKET);
+
+    // Cas 2 : capacité réduite à 50% de la demande totale -> surcharge sévère, même seed/volume contractuel.
+    const overloadedOwned: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonOpportunity(contractVolume, OFFER_PRICE)] };
+    const overloadedResult = resolveBusinessMonth(
+      overloadedOwned,
+      contractAction({ founderHoursAllocated: totalDemandBaseline * 0.5 }),
+      DEMAND_SHARE,
+      LEADERSHIP_SKILL,
+      createRng(CONTRACT_RNG_SEED),
+      DATE,
+      SERVICE_MARKET,
+    );
+
+    const fullyServedRelationship = fullyServedResult.updated.strategicAccountOpportunities[0]!.relationship!;
+    const overloadedRelationship = overloadedResult.updated.strategicAccountOpportunities[0]!.relationship!;
+
+    expect(overloadedRelationship.satisfaction.scoreThisMonth!).toBeLessThan(fullyServedRelationship.satisfaction.scoreThisMonth!);
+  });
+
+  it("relationship reste null tant qu'aucun mois n'a été résolu sous ce contrat (opportunité tout juste gagnée, jamais encore traitée)", () => {
+    const opportunity = wonOpportunity(10, OFFER_PRICE);
+    expect(opportunity.relationship).toBeNull();
+  });
 });
 
 describe("Contract Execution — Subscription (spec M11.2.4.3 décision 7 : volume intégral, AUCUN swap de prix)", () => {
@@ -906,5 +957,16 @@ describe("Contract Execution — Subscription (spec M11.2.4.3 décision 7 : volu
     // indépendant de `newSubscribers`/du contrat ce mois-ci (revenu identique quel que soit le contrat).
     expect(result.statement.revenue).toBe(baseline.statement.revenue);
     expect(result.statement.variableCosts).toBe(baseline.statement.variableCosts);
+  });
+
+  it("relationship — un contrat Subscription intégralement servi (capacité infinie) produit aussi une satisfaction mesurée (spec M11.2.4.4 §9)", () => {
+    const owned = createOwnedBusiness("sub", SUBSCRIPTION_SPEC);
+    const ownedWithContract: OwnedBusiness = { ...owned, strategicAccountOpportunities: [wonSubscriptionOpportunity(500, OFFER_PRICE * 5)] };
+    const result = resolveBusinessMonth(ownedWithContract, subscriptionContractAction(), DEMAND_SHARE, LEADERSHIP_SKILL, createRng(SUB_RNG_SEED), DATE, SUBSCRIPTION_MARKET);
+    const relationship = result.updated.strategicAccountOpportunities[0]!.relationship;
+    expect(relationship).not.toBeNull();
+    expect(relationship!.satisfaction.scoreThisMonth).not.toBeNull();
+    // Capacité infinie -> jamais de sous-livraison -> breachFrustration reste nul.
+    expect(relationship!.breachFrustration).toBe(0);
   });
 });

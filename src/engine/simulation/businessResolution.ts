@@ -44,6 +44,7 @@ import {
   wonOpportunitiesForOffer,
   type ContractOutcome,
 } from "../business/strategicAccounts.js";
+import { computeAccountRelationshipUpdate } from "../business/accountRelationship.js";
 import type { MonthlyFinancialStatement, EconomicFamily } from "../../types/business.js";
 import type { OwnedProperty } from "../../types/realEstate.js";
 import type { Offer, OfferAction } from "../../types/offer.js";
@@ -324,27 +325,46 @@ function computeOfferRevenueWithContracts(genericRevenue: number, offerPrice: nu
 
 /**
  * Fusionne les résultats d'exécution d'un mois dans la carte des
- * opportunités de l'entreprise (spec §5, plan Tâche 3 point 12) : chaque
- * contrat exécuté voit son volume réellement livré/perdu enregistré et
+ * opportunités de l'entreprise (spec M11.2.4.3 §5, M11.2.4.4 §9) : chaque
+ * contrat exécuté voit son volume réellement livré/perdu enregistré,
  * `monthsRemaining` décrémenté d'un mois (plancher 0, aucun effet à 0 —
- * renouvellement/perte différés à M11.2.4.5).
+ * renouvellement/perte différés à M11.2.4.5), ET sa satisfaction/
+ * confiance mises à jour (`computeAccountRelationshipUpdate`, tous les
+ * paramètres customer/* intouchés — voir ce module).
  */
 function applyContractExecutionOutcomes(
   opportunitiesById: Map<string, StrategicAccountOpportunity>,
   outcomes: readonly ContractOutcome[],
+  context: {
+    readonly offer: Offer;
+    readonly segments: readonly CustomerSegment[];
+    readonly genericOperationalPenalty: number;
+    readonly reputationScore: number;
+    readonly date: GameDate;
+  },
 ): void {
   for (const outcome of outcomes) {
     const opportunity = opportunitiesById.get(outcome.opportunityId);
     if (!opportunity?.contract) continue;
-    opportunitiesById.set(outcome.opportunityId, {
-      ...opportunity,
-      contract: {
-        ...opportunity.contract,
-        lastMonthServedVolume: outcome.servedVolume,
-        lastMonthUnservedVolume: outcome.unservedVolume,
-        monthsRemaining: Math.max(0, opportunity.contract.monthsRemaining - 1),
-      },
-    });
+    const updatedContract = {
+      ...opportunity.contract,
+      lastMonthServedVolume: outcome.servedVolume,
+      lastMonthUnservedVolume: outcome.unservedVolume,
+      monthsRemaining: Math.max(0, opportunity.contract.monthsRemaining - 1),
+    };
+    const segment = context.segments.find((s) => s.id === opportunity.segmentId);
+    const relationship = segment
+      ? computeAccountRelationshipUpdate({
+          previous: opportunity.relationship,
+          contract: updatedContract,
+          offer: context.offer,
+          segment,
+          genericOperationalPenalty: context.genericOperationalPenalty,
+          reputationScore: context.reputationScore,
+          date: context.date,
+        })
+      : opportunity.relationship;
+    opportunitiesById.set(outcome.opportunityId, { ...opportunity, contract: updatedContract, relationship });
   }
 }
 
@@ -506,7 +526,6 @@ export function resolveBusinessMonth(
           { rng: rng.fork(`business:${owned.id}:service:${offer.id}`) },
         );
         const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
-        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
         totalRevenue += computeOfferRevenueWithContracts(contribution.revenue, offer.price, allocation, contractOutcomes);
         totalVariableCosts += contribution.variableCosts;
         remainingCapacityHours = Math.max(0, remainingCapacityHours - contribution.hoursSold);
@@ -526,6 +545,13 @@ export function resolveBusinessMonth(
               ? Number.POSITIVE_INFINITY
               : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes, {
+          offer,
+          segments,
+          genericOperationalPenalty: operationalPenalty,
+          reputationScore: state.reputationScore,
+          date,
+        });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
           offer,
@@ -599,7 +625,6 @@ export function resolveBusinessMonth(
           { rng: rng.fork(`business:${owned.id}:hospitality:${offer.id}`) },
         );
         const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
-        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
         totalRevenue += computeOfferRevenueWithContracts(contribution.revenue, offer.price, allocation, contractOutcomes);
         totalVariableCosts += contribution.variableCosts;
         remainingCoversCapacity = Math.max(0, remainingCoversCapacity - contribution.coversServed);
@@ -619,6 +644,13 @@ export function resolveBusinessMonth(
               ? Number.POSITIVE_INFINITY
               : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes, {
+          offer,
+          segments,
+          genericOperationalPenalty: operationalPenalty,
+          reputationScore: state.reputationScore,
+          date,
+        });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
           offer,
@@ -677,6 +709,14 @@ export function resolveBusinessMonth(
         1,
       );
 
+      // Expérience délivrée (spec §4, §13) : Subscription n'a pas de ratio
+      // capacité/demande (capacité illimitée) — la seule pression
+      // opérationnelle observable est la tension support déjà mesurée par
+      // `understaffingPenalty`, réutilisée directement comme `saturationRatio`.
+      // Calculée ICI (avant la boucle) — indépendante de la demande captée —
+      // pour être disponible dès l'exécution contractuelle (M11.2.4.4 §9).
+      const operationalPenalty = computeOperationalPenalty({ saturationRatio: understaffingPenalty });
+
       let totalNewSubscribers = 0;
       const demandById = new Map<string, DemandFunnelResult>();
       const funnelById = new Map<string, Omit<DemandFunnelResult, "capacity" | "sales" | "lostToCapacity">>();
@@ -717,7 +757,13 @@ export function resolveBusinessMonth(
         // générique pour tous les abonnés, contrat compris — seul le VOLUME
         // est intégré fidèlement (overlap/incremental).
         const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
-        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes, {
+          offer,
+          segments,
+          genericOperationalPenalty: operationalPenalty,
+          reputationScore: state.reputationScore,
+          date,
+        });
         demandById.set(offer.id, {
           ...adjustedFunnel,
           capacity: Infinity,
@@ -736,12 +782,6 @@ export function resolveBusinessMonth(
       );
       revenue = contribution.revenue;
       variableCosts = contribution.variableCosts;
-
-      // Expérience délivrée (spec §4, §13) : Subscription n'a pas de ratio
-      // capacité/demande (capacité illimitée) — la seule pression
-      // opérationnelle observable est la tension support déjà mesurée par
-      // `understaffingPenalty`, réutilisée directement comme `saturationRatio`.
-      const operationalPenalty = computeOperationalPenalty({ saturationRatio: understaffingPenalty });
 
       let totalVolumeForReputation = 0;
       const reputationEntries: { value: number; weight: number }[] = [];
@@ -832,7 +872,6 @@ export function resolveBusinessMonth(
           { rng: rng.fork(`business:${owned.id}:retail:${offer.id}`) },
         );
         const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
-        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
         totalRevenue += computeOfferRevenueWithContracts(contribution.revenue, offer.price, allocation, contractOutcomes);
         totalVariableCosts += contribution.variableCosts;
         remainingCapacityUnits = Math.max(0, remainingCapacityUnits - contribution.unitsSold);
@@ -852,6 +891,13 @@ export function resolveBusinessMonth(
               ? Number.POSITIVE_INFINITY
               : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes, {
+          offer,
+          segments,
+          genericOperationalPenalty: operationalPenalty,
+          reputationScore: state.reputationScore,
+          date,
+        });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
           offer,
@@ -933,7 +979,6 @@ export function resolveBusinessMonth(
           { rng: rng.fork(`business:${owned.id}:agency:${offer.id}`) },
         );
         const contractOutcomes = allocateContractOutcomes(wonOpportunities, allocation.contractualSales, allocation.unservedContractual, contractedVolume);
-        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes);
         totalRevenue += computeOfferRevenueWithContracts(contribution.revenue, offer.price, allocation, contractOutcomes);
         totalVariableCosts += contribution.variableCosts;
         remainingCapacityMandates = Math.max(0, remainingCapacityMandates - contribution.wonMandates);
@@ -953,6 +998,13 @@ export function resolveBusinessMonth(
               ? Number.POSITIVE_INFINITY
               : 0;
         const operationalPenalty = computeOperationalPenalty({ saturationRatio });
+        applyContractExecutionOutcomes(opportunitiesById, contractOutcomes, {
+          offer,
+          segments,
+          genericOperationalPenalty: operationalPenalty,
+          reputationScore: state.reputationScore,
+          date,
+        });
         const deliveredExperience = computeDeliveredExperience(offer.qualityLevel, operationalPenalty);
         const outcome = resolveOfferOutcome(
           offer,
