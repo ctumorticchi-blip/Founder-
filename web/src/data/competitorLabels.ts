@@ -24,3 +24,15 @@ const SHARE_LABELS: Readonly<Record<MarketShareLevel, string>> = {
 export function marketShareLevelLabel(level: MarketShareLevel): string {
   return SHARE_LABELS[level];
 }
+
+/**
+ * Traduction qualitative de l'intensité concurrentielle d'un marché
+ * (0-1, spec M11.2.6.1 §3) — une fourchette de pourcentage serait
+ * illisible pour le joueur, contrairement au potentiel/à la croissance
+ * (des grandeurs monétaires/de taux qu'une fourchette exprime bien).
+ */
+export function competitiveIntensityLabel(value: number): string {
+  if (value < 0.35) return "Faible";
+  if (value < 0.65) return "Modérée";
+  return "Élevée";
+}

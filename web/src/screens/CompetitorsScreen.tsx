@@ -1,7 +1,8 @@
-import { computeCompetitorMarketShare, createRng, deriveSeed, projectCompetitorView } from "@founder/engine";
+import { computeCompetitorMarketShare, createRng, deriveSeed, projectCompetitorView, projectMarketView } from "@founder/engine";
 import { useGame } from "../state/GameProvider";
 import { useNavigation } from "../state/Navigation";
-import { competitivePositionLabel, marketShareLevelLabel } from "../data/competitorLabels";
+import { competitiveIntensityLabel, competitivePositionLabel, marketShareLevelLabel } from "../data/competitorLabels";
+import { formatEstimateRange } from "../data/strategicAccountLabels";
 
 export function CompetitorsScreen({ businessId }: { readonly businessId: string }) {
   const { state } = useGame();
@@ -17,16 +18,19 @@ export function CompetitorsScreen({ businessId }: { readonly businessId: string 
     );
   }
 
+  const market = gameState.markets[business.marketId];
   const aggregate = gameState.competitions[business.marketId];
   const marketCompetitors = gameState.competitors[business.marketId] ?? [];
-  const skillAverage = (gameState.character.skills.finance + gameState.character.skills.strategie) / 2;
+  const skills = { finance: gameState.character.skills.finance, strategie: gameState.character.skills.strategie };
+  const skillAverage = (skills.finance + skills.strategie) / 2;
 
   // La projection bruitée dépend d'un rng — dérivé de la seed de partie et
   // du mois courant (spec §9, information imparfaite) : stable pour un
   // mois donné, se rafraîchit d'un mois sur l'autre comme le reste des
   // estimations de marché.
   const seed = state.seed;
-  const displayRng = createRng(deriveSeed(seed, "competitors-view", gameState.date.year, gameState.date.month));
+  const displayRng = createRng(deriveSeed(seed, "market-study-view", gameState.date.year, gameState.date.month));
+  const marketView = market ? projectMarketView(market, skills, displayRng.fork("market")) : null;
   const views =
     aggregate && marketCompetitors.length > 0
       ? marketCompetitors.map((competitor) => {
@@ -40,8 +44,35 @@ export function CompetitorsScreen({ businessId }: { readonly businessId: string 
       <button className="top-back" onClick={() => navigate({ screen: "business", businessId })}>
         ← Entreprise
       </button>
-      <h1 className="screen-title">Concurrents identifiés</h1>
-      <p className="screen-subtitle">Estimation du positionnement et de la part de marché de vos concurrents connus.</p>
+      <h1 className="screen-title">Étude de marché</h1>
+      <p className="screen-subtitle">Estimation du potentiel du marché et de vos concurrents connus.</p>
+
+      {marketView ? (
+        <div className="card stack">
+          <div className="section-title">Le marché</div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Potentiel mensuel estimé</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>
+              {formatEstimateRange(marketView.sizeMonthlyRevenuePotential, "€")}
+            </span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Croissance mensuelle estimée</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>
+              {formatEstimateRange(
+                { value: marketView.growthRateMonthly.value * 100, uncertainty: marketView.growthRateMonthly.uncertainty * 100 },
+                "%",
+              )}
+            </span>
+          </div>
+          <div className="row row--between">
+            <span className="text-sm text-secondary">Intensité concurrentielle</span>
+            <span className="text-sm" style={{ fontWeight: 700 }}>
+              {competitiveIntensityLabel(marketView.competitiveIntensity.value)}
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       {views.length === 0 ? (
         <div className="empty-state">
