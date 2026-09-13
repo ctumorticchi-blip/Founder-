@@ -10,9 +10,9 @@ aveuglément.
 Branche : `claude/founder-web-game-4v4xga` (branche de développement
 désignée pour cette session — voir note ci-dessous).
 Dernier commit vérifié au moment de la rédaction de cette version :
-`e77cd4d` — M11.2.4.5 (Renewal & Loss) intégralement livré et vert.
-**M11.2.4 — Strategic Accounts est désormais intégralement terminé
-(5/5 sous-jalons livrés).**
+`ea4b941` — M11.2.5 (Competitive Market, portée Option C) intégralement
+livré et vert. **M11.2.4 — Strategic Accounts (5/5 sous-jalons) ET
+M11.2.5 — Competitive Market sont désormais terminés.**
 
 **Note d'infrastructure** : cette session développe sur la branche
 `claude/founder-web-game-4v4xga` (imposée par l'environnement
@@ -26,7 +26,9 @@ avant de continuer.
 ## Milestone actif
 
 **M11.2.4 — Strategic Accounts : TERMINÉ (5/5 sous-jalons).**
-Prochain milestone à démarrer : **M11.2.5 — Competitive Market**
+**M11.2.5 — Competitive Market : TERMINÉ (portée Option C, décision
+produit issue #1).**
+Prochain milestone à démarrer : **M11.2.6 — Market Intelligence & UX**
 (`FOUNDER_ROADMAP.md`).
 
 ## M11.2.4.1 — récapitulatif (terminé, non re-détaillé ici)
@@ -357,6 +359,88 @@ playtest (TDD, pas des suppositions)** :
   aucun déclenchement ; corrigé en créant/lançant une vraie offre avant
   l'injection).
 
+## M11.2.5 — récapitulatif de livraison (Competitive Market, portée Option C)
+
+Décision produit : issue GitHub #1 (`PRODUCT DECISION REQUIRED —
+M11.2.5 Competitive Market`), tranchée **Option C** par le product
+owner — concurrents identifiés informatifs, décomposition purement
+additive de `AggregateCompetition`, aucun changement au calcul de
+demande. La refonte "choix concurrentiel réel" (Option B) reste un
+incrément futur explicite, non construit ici.
+
+Spec : `docs/superpowers/specs/2026-09-13-founder-m11.2.5-competitive-market-design.md`.
+Plan : `docs/superpowers/plans/2026-09-13-founder-m11.2.5-competitive-market.md`.
+6 tâches TDD livrées, chacune commit+push séparément :
+
+1. `d2e797f` — `Competitor.qualityLevel` (additif) ; fonctions pures
+   `identifiedCompetitors.ts` : `createIdentifiedCompetitors`/
+   `advanceIdentifiedCompetitors`/`computeCompetitorMarketShare`. Le
+   point critique du design (spec §1) : la part de marché d'un
+   concurrent n'est **jamais stockée**, toujours dérivée à la lecture
+   (`strength` relatif / somme des `strength` du marché × part captée de
+   l'agrégat) — garantit par construction que la somme des parts égale
+   exactement `AggregateCompetition.totalCapturedRevenueShare`, sans
+   invariant à synchroniser à la main lors de la dérive mensuelle de
+   l'agrégat.
+2. `7e7f618` — intégration `game.ts` (création à l'init, même point que
+   `competitions`) et `simulateMonth.ts` (avance mensuelle juste après
+   `advanceAggregateCompetition` ; backfill des sauvegardes existantes :
+   un marché sans concurrents encore générés en reçoit au prochain
+   `simulateMonth`, première apparition réelle dans cette partie, jamais
+   une reconstitution de passé).
+3. `3fc255b` — migration web (`competitors ?? {}`, défaut neutre).
+4. `69c850e` — `projectCompetitorView` (`intelligence.ts`) : qualité/part
+   de marché passent par `estimate()` (bruit jamais nul, spec §9) avant
+   d'être bucketés en paliers qualitatifs (economy/standard/premium,
+   low/moderate/high) — jamais un score brut, même patron que
+   `bucketPriceSignal`/`bucketVisibility`. Le nom n'est jamais bruité.
+5. `ea4b941` — écran consultatif "Concurrents identifiés" (route
+   `competitors`, accessible depuis l'écran Entreprise) : nom +
+   positionnement + part de marché en libellés qualitatifs uniquement.
+6. Vérification finale (ce commit) : 649 tests engine + 129 tests web
+   verts, `typecheck`/`typecheck:test`/`lint`/`build` propres des deux
+   côtés, garde-fou `forbiddenApis` vert. `computeOfferDemand`/
+   `resolveOfferOutcome`/`demandShare`/`customer/*` confirmés
+   **intégralement inchangés** sur tout le milestone (`git diff
+   7149d86..HEAD --stat` sur ces fichiers : zéro ligne, vide). Playtest
+   mobile réel (390×844) : 4 concurrents identifiés nommés
+   (génération déterministe, patron de `strategicAccountIdentity.ts`
+   adapté sans contact) affichés avec positionnement/part de marché
+   qualitatifs plausibles ; après 3 mois supplémentaires, dérive
+   visiblement observée (ex. un concurrent passé de "Positionnement
+   premium/Part de marché élevée" à "Positionnement standard/Part de
+   marché modérée") — confirmant `advanceIdentifiedCompetitors` en
+   conditions réelles. Aucun id technique, aucun score brut, aucune
+   erreur console, aucun débordement horizontal.
+
+**Limitations assumées et documentées (décision produit + décisions de
+scope explicites de la spec, pas des bugs)** :
+- **Choix concurrentiel réel dans le calcul de demande** (Option B) :
+  différé, non construit. `computeOfferDemand`/`demandShare` restent
+  exactement comme avant M11.2.5 — un concurrent identifié n'affecte
+  encore aucune décision de demande, il est purement informatif.
+- **Tier `"major"`** (entrepreneurs majeurs persistants) : hors P0
+  depuis l'architecture d'origine (`docs/ARCHITECTURE.md`), aucune
+  logique de simulation dédiée construite ici.
+- **Aucune action joueur contre un concurrent identifié** (rachat,
+  guerre des prix ciblée, etc.) — observation uniquement.
+- **Consolidation UX/market intelligence complète** différée à
+  M11.2.6 (Market Intelligence & UX) — l'écran M11.2.5 est
+  volontairement minimal (pas de tri/filtre, pas d'historique affiché).
+- `projectMarketView`/`MarketEstimate` (moteur M4, jamais branché à
+  l'UI) restent non câblés côté web — pas dans le périmètre M11.2.5,
+  probablement pertinent pour M11.2.6.
+
+**Aucun bug d'implémentation trouvé** : chaque fonction pure et chaque
+test d'intégration sont passés du premier coup à l'exécution (13/13,
+23/23, 28/28, 11/11, 2/2 selon les tâches) — la seule friction a été
+deux corrections de typecheck (`readonly Competitor[]` mal inféré dans
+un test, `state.seed: number | null` non gardé dans l'écran web) et un
+ajustement du script de playtest (une opportunité synthétique liée à un
+`offerId` fictif ne déclenche jamais le cycle réel — leçon déjà connue
+depuis M11.2.4.5, reconfirmée ici pour les concurrents identifiés qui
+suivent la même boucle par offre lancée).
+
 ## Design actif
 
 `docs/superpowers/specs/2026-09-12-founder-m11.2.4-strategic-accounts-design.md`
@@ -391,27 +475,44 @@ playtest (TDD, pas des suppositions)** :
   français (ex. "Julien Faucher — Chargée de développement"). Cosmétique
   uniquement, à corriger un jour si ça gêne réellement (calibrage
   autonome, pas une PRODUCT DECISION REQUIRED).
+- **M11.2.5** : les concurrents identifiés ne progressent (création ET
+  avance mensuelle) que dans la boucle par offre LANCÉE de
+  `businessResolution.ts` — même contrainte que le cycle de
+  renouvellement M11.2.4.5, déjà documentée, reconfirmée ici.
+  `computeCompetitorMarketShare` n'a de sens que rapporté aux AUTRES
+  concurrents du MÊME marché passés en paramètre — ne jamais l'appeler
+  avec une liste partielle ou d'un autre marché (la somme des parts ne
+  serait alors plus garantie égale à l'agrégat).
+- **Option B (choix concurrentiel réel dans le calcul de demande)**
+  reste un incrément futur explicite (décision produit issue #1) — ne
+  jamais l'implémenter par anticipation avant qu'un milestone ultérieur
+  (M11.2.6 ou M11.3) en ait réellement besoin et qu'une nouvelle
+  décision produit l'autorise explicitement si le changement de boucle
+  de gameplay se confirme au moment venu.
 
 ## Prochaine action autonome
 
-**M11.2.4 — Strategic Accounts est intégralement terminé (5/5
-sous-jalons).** Démarrer **M11.2.5 — Competitive Market**
-(`FOUNDER_ROADMAP.md`, section "Ensuite") en suivant le cycle standard
-(`CLAUDE.md`) : inspecter le code réel actuel de la concurrence
-agrégée niveau 1 (`AggregateCompetition`, `src/engine/competition/`),
-relire la vision/roadmap pour cerner précisément ce que "concurrents
-identifiés réels, alternatives disponibles réellement modélisées"
-signifie concrètement dans le code existant (marché/segments/offres),
-écrire une spec + self-review si le périmètre n'est pas déjà assez
-précis pour un plan direct, sinon écrire directement un plan
-d'implémentation TDD dédié (`docs/superpowers/plans/`), l'exécuter
-tâche par tâche, vérifier, commit/push, mettre à jour ce fichier — sans
-demander de confirmation, sauf si un cas `PRODUCT DECISION REQUIRED`
-réel (`CLAUDE.md`) est rencontré (le passage d'une concurrence agrégée
-abstraite à des concurrents nommés est plausiblement proche d'un tel
-cas si le périmètre exact n'est pas déjà borné par la vision/roadmap —
-à vérifier en premier avant d'écrire du code).
+**M11.2.4 — Strategic Accounts (5/5 sous-jalons) ET M11.2.5 —
+Competitive Market sont intégralement terminés.** Démarrer
+**M11.2.6 — Market Intelligence & UX** (`FOUNDER_ROADMAP.md`, section
+"Ensuite") en suivant le cycle standard (`CLAUDE.md`) : inspecter le
+code réel actuel (`projectMarketView`/`MarketEstimate` déjà présents
+côté moteur mais jamais câblés côté web — confirmé à l'inspection
+M11.2.5 §0 — et l'écran "Concurrents identifiés" tout juste livré, très
+minimal), relire la vision/roadmap pour cerner précisément ce que
+"consolidation de l'information imparfaite/UX autour du marché et des
+comptes" signifie concrètement, écrire une spec + self-review si le
+périmètre n'est pas déjà assez précis pour un plan direct, sinon
+écrire directement un plan d'implémentation TDD dédié
+(`docs/superpowers/plans/`), l'exécuter tâche par tâche, vérifier,
+commit/push, mettre à jour ce fichier — sans demander de confirmation,
+sauf si un cas `PRODUCT DECISION REQUIRED` réel (`CLAUDE.md`) est
+rencontré. À première lecture, ce milestone ressemble davantage à une
+consolidation UX/UI (brancher de l'existant, harmoniser l'affichage)
+qu'à un nouveau système de gameplay — donc plausiblement SANS trigger,
+mais à vérifier réellement avant d'écrire du code plutôt que de le
+supposer par analogie avec M11.2.5.
 
 ## Blocage produit en attente
 
-Aucun.
+Aucun (issue #1 résolue — Option C, M11.2.5 livré sur cette base).

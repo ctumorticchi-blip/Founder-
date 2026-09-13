@@ -51,6 +51,16 @@ mobile-first.
   d'un second compte après délai de grâce écoulé). Voir
   `FOUNDER_STATE.md` pour le détail. **M11.2.4 — Strategic Accounts est
   désormais intégralement livré (5/5 sous-jalons).**
+- M11.2.5 — Competitive Market : implémenté et vérifié (portée Option C
+  — décision produit, issue GitHub #1 —, 6 tâches TDD, suite complète
+  verte, concurrents identifiés dont la part de marché est TOUJOURS
+  dérivée de l'agrégat existant plutôt que stockée séparément,
+  `computeOfferDemand`/`resolveOfferOutcome`/`demandShare` confirmés
+  intégralement inchangés sur tout le milestone, playtest mobile réel
+  confirmant l'apparition de concurrents nommés et leur dérive
+  mensuelle observable). Le choix concurrentiel réel dans le calcul de
+  demande (Option B) reste un incrément futur explicite, non construit.
+  Voir `FOUNDER_STATE.md` pour le détail.
 
 ## Actif
 
@@ -59,9 +69,6 @@ autonome.
 
 ## Ensuite
 
-6. **M11.2.5 — Competitive Market** — au-delà de la concurrence agrégée
-   niveau 1 actuelle (`AggregateCompetition`) : concurrents identifiés
-   réels, alternatives disponibles réellement modélisées.
 7. **M11.2.6 — Market Intelligence & UX** — consolidation de
    l'information imparfaite/UX autour du marché et des comptes.
 8. **M11.3 — Sales & Marketing** — au-delà de la demande organique/
