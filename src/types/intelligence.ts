@@ -15,3 +15,22 @@ export interface MarketEstimate {
   readonly growthRateMonthly: Estimate;
   readonly competitiveIntensity: Estimate;
 }
+
+/** Positionnement qualitatif estimé d'un concurrent identifié (spec M11.2.5 §5). */
+export type CompetitivePositionLevel = "economy" | "standard" | "premium";
+/** Part de marché qualitative estimée d'un concurrent identifié (spec M11.2.5 §5). */
+export type MarketShareLevel = "low" | "moderate" | "high";
+
+/**
+ * Projection bruitée d'un `Competitor` (types/competition.ts) pour le
+ * joueur — jamais un score brut, toujours un palier qualitatif (même
+ * patron que `bucketPriceSignal`/`bucketVisibility`, `market/demand.ts`).
+ * Le nom n'est jamais bruité (une identité n'est pas une grandeur
+ * économique).
+ */
+export interface CompetitorView {
+  readonly id: string;
+  readonly name: string;
+  readonly positionLevel: CompetitivePositionLevel;
+  readonly shareLevel: MarketShareLevel;
+}

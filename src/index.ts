@@ -119,9 +119,21 @@ export {
   availableDemandShare,
   createAggregateCompetition,
 } from "./engine/competition/competition.js";
+export {
+  IDENTIFIED_COMPETITORS_PER_MARKET,
+  advanceIdentifiedCompetitors,
+  computeCompetitorMarketShare,
+  createIdentifiedCompetitors,
+} from "./engine/competition/identifiedCompetitors.js";
 
-export type { Estimate, MarketEstimate } from "./types/intelligence.js";
-export { type IntelligenceSkills, projectMarketView } from "./engine/intelligence/intelligence.js";
+export type {
+  CompetitivePositionLevel,
+  CompetitorView,
+  Estimate,
+  MarketEstimate,
+  MarketShareLevel,
+} from "./types/intelligence.js";
+export { type IntelligenceSkills, projectCompetitorView, projectMarketView } from "./engine/intelligence/intelligence.js";
 
 export type { GameEvent, GameEventKind, MemoryEntry } from "./types/narrative.js";
 export { appendToMemory } from "./engine/narrative/narrative.js";

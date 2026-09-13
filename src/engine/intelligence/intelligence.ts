@@ -1,7 +1,14 @@
 import type { Rng } from "../rng/rng.js";
 import { clamp } from "../util/math.js";
-import type { Estimate, MarketEstimate } from "../../types/intelligence.js";
+import type {
+  CompetitivePositionLevel,
+  CompetitorView,
+  Estimate,
+  MarketEstimate,
+  MarketShareLevel,
+} from "../../types/intelligence.js";
 import type { Market } from "../../types/market.js";
+import type { Competitor } from "../../types/competition.js";
 
 /**
  * Incertitude relative minimale (spec §3.5, §9) : même à compétence
@@ -55,5 +62,46 @@ export function projectMarketView(
       skillAverage,
       marketRng.fork("competition"),
     ),
+  };
+}
+
+const POSITION_ECONOMY_MAX = 0.4;
+const POSITION_STANDARD_MAX = 0.7;
+
+function bucketCompetitivePosition(noisyQualityLevel: number): CompetitivePositionLevel {
+  if (noisyQualityLevel < POSITION_ECONOMY_MAX) return "economy";
+  if (noisyQualityLevel < POSITION_STANDARD_MAX) return "standard";
+  return "premium";
+}
+
+const SHARE_LOW_MAX = 0.1;
+const SHARE_MODERATE_MAX = 0.25;
+
+function bucketMarketShare(noisyMarketShare: number): MarketShareLevel {
+  if (noisyMarketShare < SHARE_LOW_MAX) return "low";
+  if (noisyMarketShare < SHARE_MODERATE_MAX) return "moderate";
+  return "high";
+}
+
+/**
+ * Projette un concurrent identifié (`Competitor`) vers ce que le joueur en
+ * perçoit (spec M11.2.5 §5) : `qualityLevel`/`marketShare` passent par
+ * `estimate()` (bruit jamais nul) avant d'être bucketés en paliers
+ * qualitatifs — jamais un score brut affiché. Le nom n'est jamais bruité.
+ */
+export function projectCompetitorView(
+  competitor: Competitor,
+  marketShare: number,
+  skillAverage0To100: number,
+  rng: Rng,
+): CompetitorView {
+  const competitorRng = rng.fork(`intelligence:competitor:${competitor.id}`);
+  const noisyQuality = estimate(competitor.qualityLevel, skillAverage0To100, competitorRng.fork("quality"));
+  const noisyShare = estimate(marketShare, skillAverage0To100, competitorRng.fork("share"));
+  return {
+    id: competitor.id,
+    name: competitor.name,
+    positionLevel: bucketCompetitivePosition(noisyQuality.value),
+    shareLevel: bucketMarketShare(noisyShare.value),
   };
 }
