@@ -200,6 +200,7 @@ export {
   deriveTrueOpportunityBudget,
   findEligibleStrategicAccountSlots,
   resolveAccountNegotiationDecision,
+  resolveAccountRenewalDecision,
   wonOpportunitiesForOffer,
   type ContractOutcome,
   type ContractualCapacityAllocation,

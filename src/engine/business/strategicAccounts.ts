@@ -6,6 +6,7 @@ import { clamp } from "../util/math.js";
 import { getMarketSegments } from "../market/segments.js";
 import { estimate } from "../intelligence/intelligence.js";
 import { generateStrategicAccountIdentity } from "./strategicAccountIdentity.js";
+import { INITIAL_ACCOUNT_TRUST } from "./accountRelationship.js";
 import type { EconomicFamily } from "../../types/business.js";
 import type { Offer } from "../../types/offer.js";
 import type {
@@ -297,6 +298,70 @@ export function resolveAccountNegotiationDecision(
       volume: budget.expectedVolume,
       qualityCommitment: budget.minAcceptableQuality,
       durationMonths: proposal.durationMonths,
+    },
+  };
+}
+
+/**
+ * Résout une décision de RENOUVELLEMENT (spec M11.2.4.5 §11-§12) —
+ * cycle de vie distinct de `resolveAccountNegotiationDecision` (réservée
+ * à `"researching"`/`"negotiating"`) : opère sur un compte TOUJOURS
+ * `"won"`, avec une `contract.renewalProposal` en attente posée par le
+ * moteur (c'est le client qui ouvre le renouvellement, jamais le joueur
+ * — `decision.action === "propose"` n'a donc aucun sens ici). Même
+ * discipline que la négociation initiale : la résolution est TOUJOURS
+ * déterministe contre le vrai budget de renouvellement
+ * (`deriveRenewalBudget`), jamais un jet de probabilité sur l'issue.
+ * Fonction pure.
+ */
+export function resolveAccountRenewalDecision(
+  opportunity: StrategicAccountOpportunity,
+  family: EconomicFamily,
+  decision: Extract<AccountNegotiationDecision, { action: "accept" | "counter" | "withdraw" }>,
+  concentration: number,
+  competitivePressure: number,
+  reputationScore: number,
+  date: GameDate,
+): StrategicAccountOpportunity {
+  if (opportunity.status !== "won" || !opportunity.contract) {
+    throw new RangeError(`resolveAccountRenewalDecision: "${opportunity.id}" au statut "${opportunity.status}", pas un compte actif.`);
+  }
+  const { contract } = opportunity;
+  if (!contract.renewalProposal) {
+    throw new RangeError(`resolveAccountRenewalDecision: aucun renouvellement en attente pour "${opportunity.id}".`);
+  }
+
+  if (decision.action === "withdraw") {
+    return { ...opportunity, status: "lost", contract: null };
+  }
+  if (decision.action === "accept") {
+    return signContract(opportunity, contract.renewalProposal, date);
+  }
+
+  const referencePrice = referencePriceFor(opportunity.segmentId, family);
+  const budget = deriveRenewalBudget({
+    opportunityId: opportunity.id,
+    referencePrice,
+    trust: opportunity.relationship?.trust ?? INITIAL_ACCOUNT_TRUST,
+    concentration,
+    reputationScore,
+    competitivePressure,
+  });
+  const { proposal } = decision;
+  const accepted = proposal.price <= budget.maxAcceptablePrice * NEGOTIATION_PRICE_TOLERANCE && proposal.qualityCommitment >= budget.minAcceptableQuality;
+  if (accepted) return signContract(opportunity, proposal, date);
+
+  return {
+    ...opportunity,
+    contract: {
+      ...contract,
+      renewalProposal: {
+        price: budget.maxAcceptablePrice,
+        volume: budget.expectedVolume,
+        qualityCommitment: budget.minAcceptableQuality,
+        durationMonths: proposal.durationMonths,
+      },
+      // Le compteur d'expiration n'est JAMAIS remis à zéro par une contre-négociation (décision 4, plan).
     },
   };
 }

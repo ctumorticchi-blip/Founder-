@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../../../src/engine/rng/rng.js";
+import { INITIAL_ACCOUNT_TRUST } from "../../../src/engine/business/accountRelationship.js";
 import {
   MAX_ACTIVE_STRATEGIC_ACCOUNT_OPPORTUNITIES_PER_BUSINESS,
   advanceStrategicAccountOpportunities,
@@ -13,7 +14,9 @@ import {
   deriveRenewalBudget,
   deriveTrueOpportunityBudget,
   findEligibleStrategicAccountSlots,
+  RENEWAL_GRACE_PERIOD_MONTHS,
   resolveAccountNegotiationDecision,
+  resolveAccountRenewalDecision,
   wonOpportunitiesForOffer,
 } from "../../../src/engine/business/strategicAccounts.js";
 import type { Offer } from "../../../src/types/offer.js";
@@ -569,5 +572,98 @@ describe("deriveRenewalBudget (spec M11.2.4.5 §11-§12 — rapport de force com
       expect(result.minAcceptableQuality).toBeGreaterThanOrEqual(0);
       expect(result.minAcceptableQuality).toBeLessThanOrEqual(100);
     }
+  });
+});
+
+describe("resolveAccountRenewalDecision (spec M11.2.4.5 §11-§12)", () => {
+  const NEUTRAL_POWER = { concentration: 0, competitivePressure: 0, reputationScore: 0.5 };
+
+  function makeWonOpportunityWithRenewal(renewalProposal: AccountProposal | null): StrategicAccountOpportunity {
+    return makeOpportunity({
+      status: "won",
+      contract: {
+        price: 8_000,
+        volume: 30,
+        qualityCommitment: 60,
+        durationMonths: 6,
+        monthsRemaining: 0,
+        signedAt: DATE,
+        lastMonthServedVolume: 30,
+        lastMonthUnservedVolume: 0,
+        renewalProposal,
+        renewalDeadlineMonthsRemaining: renewalProposal ? RENEWAL_GRACE_PERIOD_MONTHS : null,
+      },
+    });
+  }
+
+  it("accepter la proposition du client remplace le contrat par ses conditions, remet renewalProposal/renewalDeadlineMonthsRemaining à null", () => {
+    const renewalProposal: AccountProposal = { price: 9_000, volume: 35, qualityCommitment: 65, durationMonths: 12 };
+    const opp = makeWonOpportunityWithRenewal(renewalProposal);
+    const result = resolveAccountRenewalDecision(opp, "agency", { action: "accept" }, NEUTRAL_POWER.concentration, NEUTRAL_POWER.competitivePressure, NEUTRAL_POWER.reputationScore, DATE);
+    expect(result.status).toBe("won");
+    expect(result.contract!.price).toBe(9_000);
+    expect(result.contract!.volume).toBe(35);
+    expect(result.contract!.durationMonths).toBe(12);
+    expect(result.contract!.monthsRemaining).toBe(12);
+    expect(result.contract!.renewalProposal).toBeNull();
+    expect(result.contract!.renewalDeadlineMonthsRemaining).toBeNull();
+  });
+
+  it("une contre-proposition acceptable (dans le vrai budget de renouvellement) est acceptée directement", () => {
+    const opp = makeWonOpportunityWithRenewal({ price: 9_000, volume: 35, qualityCommitment: 65, durationMonths: 12 });
+    const budget = deriveRenewalBudget({
+      opportunityId: opp.id,
+      referencePrice: REFERENCE_PRICE,
+      trust: INITIAL_ACCOUNT_TRUST,
+      ...NEUTRAL_POWER,
+    });
+    const acceptableCounter: AccountProposal = { price: budget.maxAcceptablePrice, volume: budget.expectedVolume, qualityCommitment: budget.minAcceptableQuality, durationMonths: 12 };
+    const result = resolveAccountRenewalDecision(
+      opp,
+      "agency",
+      { action: "counter", proposal: acceptableCounter },
+      NEUTRAL_POWER.concentration,
+      NEUTRAL_POWER.competitivePressure,
+      NEUTRAL_POWER.reputationScore,
+      DATE,
+    );
+    expect(result.status).toBe("won");
+    expect(result.contract!.price).toBe(acceptableCounter.price);
+    expect(result.contract!.renewalProposal).toBeNull();
+  });
+
+  it("une contre-proposition trop chère est rejetée -> nouvelle contre-offre réelle, renewalDeadlineMonthsRemaining INCHANGÉ", () => {
+    const opp = makeWonOpportunityWithRenewal({ price: 9_000, volume: 35, qualityCommitment: 65, durationMonths: 12 });
+    const tooExpensive: AccountProposal = { price: 999_999, volume: 35, qualityCommitment: 65, durationMonths: 12 };
+    const result = resolveAccountRenewalDecision(
+      opp,
+      "agency",
+      { action: "counter", proposal: tooExpensive },
+      NEUTRAL_POWER.concentration,
+      NEUTRAL_POWER.competitivePressure,
+      NEUTRAL_POWER.reputationScore,
+      DATE,
+    );
+    expect(result.status).toBe("won");
+    expect(result.contract!.renewalProposal).not.toBeNull();
+    expect(result.contract!.renewalProposal!.price).toBeLessThan(tooExpensive.price);
+    expect(result.contract!.renewalDeadlineMonthsRemaining).toBe(RENEWAL_GRACE_PERIOD_MONTHS);
+  });
+
+  it("withdraw pendant un renouvellement produit un départ immédiat : status lost, contract null", () => {
+    const opp = makeWonOpportunityWithRenewal({ price: 9_000, volume: 35, qualityCommitment: 65, durationMonths: 12 });
+    const result = resolveAccountRenewalDecision(opp, "agency", { action: "withdraw" }, NEUTRAL_POWER.concentration, NEUTRAL_POWER.competitivePressure, NEUTRAL_POWER.reputationScore, DATE);
+    expect(result.status).toBe("lost");
+    expect(result.contract).toBeNull();
+  });
+
+  it("lève une erreur si le compte n'est pas 'won'", () => {
+    const opp = makeOpportunity({ status: "negotiating" });
+    expect(() => resolveAccountRenewalDecision(opp, "agency", { action: "withdraw" }, 0, 0, 0.5, DATE)).toThrow(RangeError);
+  });
+
+  it("lève une erreur si aucun renouvellement n'est en attente", () => {
+    const opp = makeWonOpportunityWithRenewal(null);
+    expect(() => resolveAccountRenewalDecision(opp, "agency", { action: "accept" }, 0, 0, 0.5, DATE)).toThrow(RangeError);
   });
 });
